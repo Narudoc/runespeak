@@ -1,0 +1,115 @@
+# Community short names for official places, instances and factions (both flavors).
+# Hand-written. korean + english is an official pair of the classic table
+# (data/official_names.classic.tsv); where the retail table names the place differently in Korean, the app
+# takes the retail name when it runs for retail. aliases are what players type; a trailing (hint) on an
+# alias says when that sense applies. Short aliases with a second common meaning (AD, CE, TK, WS ...) are not
+# here: they are senses in data/abbreviations.*.tsv, where a note can tell the meanings apart.
+# A two-letter ALL-CAPS alias (UC, TB), or one spelled like an everyday word, matches capitals only;
+# longer ALL-CAPS aliases (STV, UBRS) match in any case.
+# Rows: 100
+korean	english	aliases
+# == Cities and towns ==
+스톰윈드	Stormwind City	SW, Stormwind
+아이언포지	Ironforge	IF
+다르나서스	Darnassus	Darna
+오그리마	Orgrimmar	Org, Orgri, Orgrim, Ogri
+언더시티	Undercity	UC
+썬더 블러프	Thunder Bluff	TB(the tauren city; in Cataclysm talk TB can be Tol Barad), Thunderbluff
+실버문	Silvermoon City	SMC, Silvermoon
+샤트라스	Shattrath City	Shatt, Shattrath
+달라란	Dalaran	Dal, Dala
+가젯잔	Gadgetzan	Gadgetz
+희망의 빛 예배당	Light's Hope Chapel	LHC, Lights Hope, Light's Hope
+# == Zones ==
+가시덤불 골짜기	Stranglethorn Vale	STV, Stranglethorn
+동부 역병지대	Eastern Plaguelands	EPL
+서부 역병지대	Western Plaguelands	WPL
+검은바위 산	Blackrock Mountain	BRM
+운고로 분화구	Un'Goro Crater	Ungoro, Un'Goro, Un Goro
+타나리스	Tanaris	Tana
+실리더스	Silithus	Sili
+버섯구름 봉우리	Thousand Needles	1k Needles, 1000 Needles
+돌발톱 산맥	Stonetalon Mountains	Stonetalon, STM
+힐스브래드 구릉지	Hillsbrad Foothills	Hillsbrad
+아라시 고원	Arathi Highlands	Arathi(the zone; the battleground is Arathi Basin)
+붉은마루 산맥	Redridge Mountains	Redridge
+먼지진흙 습지대	Dustwallow Marsh	Dustwallow
+티리스팔 숲	Tirisfal Glades	Tirisfal
+은빛소나무 숲	Silverpine Forest	Silverpine
+엘윈 숲	Elwynn Forest	Elwynn
+모단 호수	Loch Modan	Loch
+잊혀진 땅	Desolace	Deso
+페랄라스	Feralas	Fera
+지옥불 반도	Hellfire Peninsula	HFP
+장가르 습지대	Zangarmarsh	Zangar
+테로카르 숲	Terokkar Forest	Terokkar, Terok
+칼날 산맥	Blade's Edge Mountains	BEM, Blade's Edge, Blades Edge
+어둠달 골짜기	Shadowmoon Valley	SMV
+쿠엘다나스 섬	Isle of Quel'Danas	IoQD, Quel'Danas
+북풍의 땅	Borean Tundra	Borean
+숄라자르 분지	Sholazar Basin	Sholazar, Shola
+줄드락	Zul'Drak	ZD
+네 바람의 계곡	Valley of the Four Winds	VotFW, Four Winds
+크라사랑 밀림	Krasarang Wilds	Krasarang
+쿤라이 봉우리	Kun-Lai Summit	Kun-Lai, Kun Lai, Kunlai
+탕랑 평원	Townlong Steppes	Townlong
+영원꽃 골짜기	Vale of Eternal Blossoms	VoEB
+# == Dungeons and raids with one settled short name ==
+성난불길 협곡	Ragefire Chasm	RFC
+통곡의 동굴	Wailing Caverns	WC
+그림자송곳니 성채	Shadowfang Keep	SFK
+검은심연의 나락	Blackfathom Deeps	BFD
+스톰윈드 지하감옥	The Stockade	Stocks, Stockades
+놈리건	Gnomeregan	Gnomer
+가시덩굴 우리	Razorfen Kraul	RFK
+가시덩굴 구릉	Razorfen Downs	RFD
+붉은십자군 수도원	Scarlet Monastery	SM
+울다만	Uldaman	Ulda
+줄파락	Zul'Farrak	ZF
+마라우돈	Maraudon	Mara
+검은바위 나락	Blackrock Depths	BRD
+검은바위 첨탑 하층	Lower Blackrock Spire	LBRS
+검은바위 첨탑 상층	Upper Blackrock Spire	UBRS
+스트라솔름	Stratholme	Strat(the dungeon; in tactics talk "strat" is short for strategy)
+스칼로맨스	Scholomance	Scholo
+오닉시아의 둥지	Onyxia's Lair	Ony, Onyxia
+검은날개 둥지	Blackwing Lair	BWL
+줄구룹	Zul'Gurub	ZG
+안퀴라즈 폐허	Ruins of Ahn'Qiraj	AQ20
+안퀴라즈 사원	Temple of Ahn'Qiraj	AQ40
+낙스라마스	Naxxramas	Naxx, Nax
+카라잔	Karazhan	Kara
+불뱀 제단	Serpentshrine Cavern	SSC
+줄아만	Zul'Aman	ZA
+태양샘 고원	Sunwell Plateau	Sunwell
+울두아르	Ulduar	Uldu
+얼음왕관 성채	Icecrown Citadel	ICC
+아카본 석실	Vault of Archavon	VoA
+검은날개 강림지	Blackwing Descent	BWD
+네 바람의 왕좌	Throne of the Four Winds	TotFW, To4W
+모구샨 금고	Mogu'shan Vaults	MSV
+오그리마 공성전	Siege of Orgrimmar	SoO
+# == Battlegrounds ==
+전쟁노래 협곡	Warsong Gulch	WSG, Warsong
+아라시 분지	Arathi Basin	AB
+알터랙 계곡	Alterac Valley	AV
+폭풍의 눈	Eye of the Storm	EotS
+고대의 해안	Strand of the Ancients	SotA
+정복의 섬	Isle of Conquest	IoC
+# == Factions ==
+세나리온 의회	Cenarion Circle	CC rep, Cenarion
+나무구렁 요새	Timbermaw Hold	Timbermaw, TMH
+토륨 대장조합	Thorium Brotherhood	Thorium Bros, TB rep
+히드락시안 물의 군주	Hydraxian Waterlords	Hydraxian, Waterlords
+잔달라 부족	Zandalar Tribe	Zandalar, ZG rep
+노즈도르무 혈족	Brood of Nozdormu	BoN
+스팀휘들 무역회사	Steamwheedle Cartel	Steamwheedle
+다크문 유랑단	Darkmoon Faire	DMF
+샤타르	The Sha'tar	Sha'tar, Shatar
+고난의 거리	Lower City	LC rep
+시간의 수호자	Keepers of Time	KoT
+보랏빛 눈의 감시자	The Violet Eye	Violet Eye
+무너진 태양 공격대	Shattered Sun Offensive	SSO
+칠흑의 기사단	Knights of the Ebon Blade	Ebon Blade, KotEB
+은빛십자군	Argent Crusade	AC rep
+호디르의 후예	The Sons of Hodir	Sons of Hodir, SoH

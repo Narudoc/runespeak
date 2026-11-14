@@ -1,0 +1,1021 @@
+# Chat abbreviations and slang of the classic game (Classic Era, Anniversary, Classic progression).
+# Hand-written from general knowledge of how players type; not generated.
+# abbr = token as typed; also = other spellings (comma-separated); english = what it stands for;
+# korean = official Korean name when english is an official name in official_names.classic.tsv,
+# otherwise the usual Korean player term (may be empty); note = when the sense applies.
+# An ambiguous abbr has one row per sense.
+# Rows: 992
+abbr	also	english	korean	note
+# == Finding a group, recruiting ==
+LFG		looking for group	파티 구함	the writer wants to join a group; usually followed by a role and a dungeon or raid
+LFM		looking for more	파티원 구함	a group that is recruiting; usually followed by the roles still missing
+LF1M	LF2M, LF3M, LF4M, LF5M	looking for N more	N명 구함	the digit is how many spots are still open in the group
+LF		looking for	구함	followed by what is wanted: a role, a group, an item or a crafter
+LFW		looking for work	제작 의뢰 받습니다	a crafter offering a profession service for tips or a fee
+LFR		looking for raid	공격대 구함	in Classic Era a player seeking a raid spot; from Cataclysm on also the automatic Raid Finder difficulty
+LFGuild	LF guild	looking for a guild	길드 구함	player wants to be recruited into a guild
+PST		please send tell	귓속말 주세요	ends an advert; means whisper me, not the time zone, unless a clock time stands next to it
+PM		private message	귓속말	"pm me" means whisper me; after a clock time it is simply afternoon
+inv	invite	invite	초대	"inv pls" asks for a group invitation; "inv" after a name means invite that player
+1		count me in	저요(손)	a lone "1" answers a call such as "type 1 for invite" or "1 if ready"
+summ	summon, summs, summons, sums	summon	소환	asking for or offering a warlock summon to the dungeon entrance
+port	portal, ports	mage portal	차원문	a mage teleporting buyers to a city, usually for a small fee or tip
+pug	PuG, pugs, pugging	pick-up group	막공(즉석 파티)	a group or raid of strangers rather than a guild team; also used for a stranger in the group
+premade	pre-made	premade group	사전 구성 팀	an organised battleground team that queues together, as opposed to random players
+last spot		one place left	마지막 한 자리	recruiting line, usually followed by the role wanted
+all welcome	all classes welcome	any class may join	직업 무관	recruiting line with no class restriction
+exp only	experienced only, exp req	experienced players only	숙련자만	recruiter wants players who already know the fights
+link gear	link achiev, link achieve, link ach	show your gear or achievement in chat	장비/업적 링크	recruiter asks applicants to prove readiness before an invite
+logs	parses, parse	combat log rankings	로그(딜 순위 기록)	performance records from log sites; "good logs req" asks for proven performers
+carry	carries, carried	being taken through content by stronger players	쩔(버스)	often a paid service; "WTS carry" sells it
+boost	boosts, boosting, boosted	paid power-levelling run	쩔(레벨업 버스)	a high-level player, often a mage, clears a dungeon while low-level customers collect experience
+resets	reset	instance reset	인던 초기화	"5 resets" counts boosting runs; "reset" alone asks the leader to reset the dungeon
+lockout	locked, saved	weekly raid lock	귀속(입장 제한)	"saved" or "locked" means the character already killed bosses there this reset
+ID	raid ID	raid lockout identity	귀속 ID	"have ID" means a saved instance with some bosses already dead; not an identity document
+fresh run	fresh ID, fresh raid	no bosses killed yet	처음부터(새 귀속)	a raid starting from the first boss; "fresh server" is a newly opened realm
+full run	full clear, fullclear	every boss will be done	풀 클리어	opposite of a quick or partial run
+quick run	speed run, speedrun, fast run	a run that skips optional bosses	빠른 진행(스킵런)	sets the expectation of a hurried pace
+attune	attuned, attunement, att	attunement quest chain	입장 퀘스트(입장 자격)	the unlock required before entering certain raids, e.g. Molten Core, Onyxia, Naxxramas, Karazhan
+have key	need key, key holder, keys	dungeon key	열쇠	a key item that opens a dungeon door, e.g. for Upper Blackrock Spire, Scholomance or a heroic
+GDKP	gdkps	gold bid raid	골드 경매 공대(골팟)	every drop is auctioned for gold in raid chat and the pot is shared out among the raiders at the end
+pot		the gold pool of a GDKP	분배금(총 경매 금액)	in a GDKP advert or payout this is the collected gold, not a potion
+cuts	payout	share of the GDKP pot	분배금	each raider's payout at the end of a gold-bid run
+min bid	minbid, min inc, min increment	lowest allowed bid	최소 입찰가	GDKP auction rule quoted in gold
+SR	softres, soft res, soft-res, softreserve	soft reserve	소프트 리저브(사전 예약 주사위)	each raider names one or two wanted items beforehand and only those who named an item roll for it
+HR	hardres, hard res, hard-res, hardreserve	hard reserve	하드 리저브(선점)	the listed item is withheld from rolls and goes to the organiser or a named player
+res	resd, reserved, ress	reserved	예약(선점)	"X res" in a raid advert means item X is not open for rolling
+res	rez, ress, rezz, rezzed	resurrect	부활	"res pls" after a death asks a healer to revive the writer
+res	resist, resists, resistance	resistance	저항	after a magic school, e.g. "fire res", it is the defensive stat on gear
+MS	mainspec, main spec	main spec	주특성	loot rule: the role the character plays in this raid
+MS		Mortal Strike	죽음의 일격	when talking about warriors or healing reduction it is the Arms ability
+OS	offspec, off spec	off spec	부특성	loot for a secondary role, rolled only after main-spec players pass
+OS		The Obsidian Sanctum	흑요석 성소	Wrath raid with the dragon Sartharion; "OS 3D" means with all three drakes alive
+MS>OS	MS > OS, MS/OS, MSOS	main spec before off spec	주특성 우선	loot rule; a "+1" after it means a player who has won once yields to those who have not
+NBG	need b4 greed, need before greed	need before greed	입찰 우선(필요한 사람 먼저)	loot rule for dungeon groups: roll need only for real upgrades
+greed	all greed	greed roll	차비	the low-priority loot roll; the high-priority one is need = 입찰
+roll	rolls, rolling, /roll	dice roll	주사위	random 1-100 roll that decides who receives an item
+FFA		free for all	자유 획득	loot setting where anyone may pick up; in PvP context an everyone-versus-everyone fight
+ML	masterloot, master loot	master looter	담당자 획득	loot setting where the leader hands out drops
+LC	loot council	loot council	전리품 위원회(룻카)	loot rule: a few officers hand out each drop instead of letting the raid roll; adverts name it so applicants know before joining
+DKP		dragon kill points	DKP(공대 포인트)	guild point system spent to bid on raid drops
+EPGP		effort points and gear points	EPGP	guild loot system based on a ratio of attendance to gear received
+SK	suicide kings	Suicide Kings list	순번제(SK)	loot system where the taker of an item drops to the bottom of an ordered list
+prio	priority, prios	loot priority	우선권	which class or role is first in line for an item, e.g. "tank prio"
+ninja	ninjad, ninja'd, ninjaed, ninja looter	loot thief	닌자(먹튀)	someone who takes loot against the agreed rules; a warning or an accusation
+RL		raid leader	공대장	the person running the raid
+RL	irl	real life	현실	when the talk is about leaving, family or work it means life outside the game
+MT		main tank	메인 탱커	the tank who holds the boss
+MT	mistell, miss tell	mistell	귓말 실수(오타)	apology word typed alone: the writer's previous line was a whisper or guild message that landed here by mistake; not the main tank then
+OT	offtank, off tank, off-tank	off tank	서브 탱커	second tank who takes adds or swaps on the boss
+MA	main assist	main assist	점사 지정자	raid role: damage dealers attack whatever this player attacks, usually through an /assist macro
+RW		raid warning	공격대 경보	the large on-screen announcement a leader sends
+GM		guild master	길드장	the head of a guild
+GM		game master	GM(운영자)	the game company's in-game support employee, as opposed to a guild's leader; expect it near words like ticket, appeal or restore
+GM		Gold Mine	금광	a capture point in Arathi Basin calls
+GM		good morning	좋은 아침	as a greeting on its own in guild chat
+officer	officers	guild officer	길드 관리자	guild rank below the guild master
+recruit	recruiting, recruitment	guild recruiting	길드원 모집	guild advertisement; usually lists raid days and times in server time
+ST	server time, realm time	server time	서버 시간	the realm's own clock, so that everyone reads a start time alike: "20:00 ST"
+EST	CST, MST, EDT, PDT, CDT	North American time zone	북미 시간대	after a clock time these are US time zones, not game terms
+# == Trade and economy ==
+WTS		want to sell	팝니다	trade advert; an item or service and often a price follow
+WTB		want to buy	삽니다	trade advert; the wanted item or service follows
+WTT		want to trade	교환 원합니다	offering one item in exchange for another
+wth		what the hell	뭐야 이게	exclamation of surprise or annoyance
+AH	auction house	auction house	경매장	the player market; "AH price" is the going rate there
+COD	C.O.D.	cash on delivery	대금 청구 우편(착불)	item sent by mail that the receiver pays for on opening
+OBO		or best offer	가격 제안 가능	follows an asking price that is negotiable
+ea	each	each	개당	price per single item, e.g. "2g ea"
+stack	stacks	a full stack of items	한 묶음	in trade talk a pile of 20 or so identical items; in combat see the other sense
+stack	stack up, stacking	gather on one spot	뭉치기	combat call: everyone stand together
+g		gold	골드	directly after a number it is a price in gold
+k		thousand	천	after a number it means thousands, usually of gold: 2k = 2,000 gold
+k	kk	okay	ㅇㅋ	a lone "k" or "kk" as a reply simply agrees
+gph	g/hr, gold per hour	gold per hour	시간당 골드	how profitable a farming spot is
+mats	materials	crafting materials	재료	ingredients of a craft; "have mats" / "mats provided" in a crafting advert tells who brings them
+tip	tips, tipping	gratuity for a service	수고비(팁)	paid to a crafter, summoner or portal mage; "free, tips welcome"
+fee		fixed service charge	수수료	price asked for a craft, enchant or lockpick
+BoE	BOEs	bind on equip	착용 시 귀속	tradable until someone wears it
+BoP		bind on pickup	획득 시 귀속	cannot be traded once looted
+BoP		Blessing of Protection	보호의 축복	paladin spell that makes a friendly target immune to physical damage; "BoP me"
+BoA		bind to account	계정 귀속	heirloom-style items shared between one player's characters, from Wrath on
+BiS	prebis, pre-bis, pre bis	best in slot	최종 장비(비스)	the best possible item for a gear slot; "pre-BiS" is the best gear obtainable before raiding
+upgrade	upg	better item than the one worn	업그레이드(상위 장비)	reason given when rolling need
+DE	disenchant, d/e, dis	disenchant	마력 추출	turn a piece of gear into dust and shards with Enchanting; "DE if nobody needs" is a loot instruction
+shard	shards	enchanting shard	마법부여 조각	disenchant result; for warlocks it means Soul Shards
+LS	LSes	Large Brilliant Shard	눈부신 큰 결정	enchanting material from level 50-60 blue items
+nexus	nexus crystal, nexi	Nexus Crystal	마력의 결정체	enchanting material from disenchanted epics
+ench	enchant, enchants, chant, chants	enchantment	마법부여	a permanent bonus put on gear by an enchanter
+chanter	enchanter	enchanter	마법부여사	someone able to put enchants on gear; "LF chanter" = the writer wants an enchant applied
+LW		Leatherworking	가죽 세공	profession; also a player who has it
+BS		Blacksmithing	대장기술	profession; also a player who has it
+BS		Blacksmith	대장간	capture point in Arathi Basin calls such as "inc BS"
+BS		Battle Shout	전투의 외침	warrior group buff, when buffs or warriors are being discussed
+BS		Backstab	기습	rogue attack, in talk of rogue damage
+BS		nonsense	헛소리	as an angry reaction, e.g. "that's bs"
+JC		Jewelcrafting	보석세공	profession added in Burning Crusade; also a player who has it
+alch	alchemist, alchy	Alchemy	연금술	profession; also a player who has it
+herb	herbs, herbing, herbalist	Herbalism	약초 채집	gathering profession; "herbs" are the gathered plants
+eng	engi, engie, engy, engineer	Engineering	기계공학	profession, when crafting or professions are the topic; also a player who has it
+eng	english, engl	English language	영어	"eng?", "eng only", "speak eng": asks for or requires English; not the profession
+tailor	tailors	Tailoring	재봉술	profession; here a player who has it
+skinner	skinning	Skinning	무두질	gathering profession; a skinner is a player who has it
+insc	scribe	Inscription	주문각인	profession added in Wrath; a scribe is a player who has it
+FA		First Aid	응급치료	secondary profession for bandages
+xmute	transmute, tmute	alchemy transmute	변환	a cooldown-limited alchemy conversion such as Arcanite; "WTS xmute cd"
+cd	cds, cooldown, cooldowns	cooldown	재사용 대기시간(쿨기)	in trade talk a profession cooldown; in combat the strong abilities with long reuse timers
+arcanite	arc bar, arcanite bar	Arcanite Bar	아케이나이트 주괴	bar made by an alchemist's transmute, needed for top weapons
+lotus	black lotus	Black Lotus	검은 연꽃	rare herb used for flasks
+lockbox	LB open, lockpick, lockpicking	locked chest service	자물쇠 따기	a rogue opening locked boxes for a tip
+craft	crafter, crafting	craft an item	제작	"LF crafter" seeks a player who can make something
+pattern	recipe, plans, schematic, formula	profession recipe	도안	the learnable item that teaches a craft
+vendor	vend, vendored	sell to an NPC merchant	상점 판매(상점행)	"vendor trash" is loot only worth selling to an NPC
+repair	repairs, rep bot	gear repair	수리	"need repair" before a pull; a repair bot is an engineer's device
+RMT		real-money trading	현금 거래	buying gold or items for real money, against the rules
+bot	bots, botter, botting	automated cheating character	봇(오토)	a program-run character; an accusation or a complaint
+scam	scammer, scammed	fraud	사기	warning about a dishonest trader
+# == Roles ==
+tank	tanks, tanking	tank	탱커	the group member who takes the hits and keeps threat - in classic usually a warrior, a bear druid or a protection paladin
+heals	healz, healer, healers	healer	힐러	the role that restores health; "need heals" seeks a healer
+dps	dd, damage dealer	damage dealer	딜러	role; as a number it is damage per second
+rdps	ranged dps, ranged	ranged damage dealer	원거리 딜러	casters and hunters
+mdps	melee dps	melee damage dealer	근접 딜러	warriors, rogues and other close-range classes
+caster	casters	spell caster	캐스터	mage, warlock, priest and other spell users
+# == Classes and specs ==
+warr	wari, warrs, prot war, fury war, arms war	Warrior	전사	class; "prot war" and "fury war" are a tank and a damage warrior
+pally	pala, pal, pallies, pali, pld	Paladin	성기사	class
+hpal	hpally, holy pally, holy pal, hpala	Holy Paladin	신성 성기사	healing paladin
+ppal	prot pally, prot pal, protadin, tankadin	Protection Paladin	보호 성기사	tank paladin
+ret	retri, ret pally	Retribution	징벌	paladin damage spec
+huntard	huntards	Hunter	사냥꾼	mocking nickname for a hunter who plays badly
+rog	rogue, rogues	Rogue	도적	class
+sham	shammy, shammie, shamy, shaman	Shaman	주술사	class
+rsham	rshammy, resto sham, resto shammy	Restoration Shaman	복원 주술사	healing shaman
+enh	enhance, enhancement	Enhancement	고양	shaman melee spec
+ele	elem, ele sham	Elemental	정기	shaman caster spec; in Maraudon or farming talk it can also mean elemental mobs
+lock	wlock, locks, warlock	Warlock	흑마법사	class; not a door lock unless lockpicking is the topic
+dudu	drood, dru, druid, druids, doodoo	Druid	드루이드	class
+rdruid	rdudu, resto druid, rdrood, tree druid	Restoration Druid	회복 드루이드	healing druid
+boomkin	boomie, boomy, moonkin, oomkin, balance druid	Balance Druid	조화 드루이드	caster druid in Moonkin Form; "oomkin" mocks its mana problems
+feral	ferals	Feral Druid	야성 드루이드	melee druid, cat for damage or bear for tanking
+bear	bear tank	bear-form druid tank	곰 탱커(야성 드루이드)	a feral druid tanking in bear form
+kitty	cat dps, cat druid	cat-form feral druid	표범 드루이드(야성 딜)	feral druid dealing damage in cat form
+resto	restoration	Restoration	복원(주술사) / 회복(드루이드)	healing spec of shamans and druids
+prot	protection	Protection	방어(전사) / 보호(성기사)	tanking spec of warriors and paladins
+disc	discipline	Discipline	수양	priest spec built around shields and support
+spriest	shadow priest, spr, shadowpriest	Shadow Priest	암흑 사제	damage-dealing priest
+SP		spell power	주문력	stat on caster gear, e.g. "+30 sp"
+SP		Shadow Priest	암흑 사제	when a role or class is being listed in a group advert
+destro	destruction	Destruction	파괴	warlock spec
+aff	affli, affliction	Affliction	고통	warlock spec built on damage over time
+demo	demonology	Demonology	악마	warlock talent tree built around the demon pet
+MM	marks hunter, marksman	Marksmanship	사격	hunter spec
+BM		Beast Mastery	야수	hunter spec, when hunters are discussed
+BM		The Black Morass	검은늪	Burning Crusade Caverns of Time dungeon, in a group advert
+BM		bad manners	비매너	complaint about rude play, mostly in PvP
+surv	survival	Survival	생존	hunter spec; "SV" is also used
+sub	subtlety	Subtlety	잠행	rogue spec
+assa	sin, assassination	Assassination	암살	rogue spec
+combat	combat rogue	Combat	전투	rogue spec, when specs are being discussed
+arms	arms war	Arms	무기	warrior two-handed spec
+fury	fury war	Fury	분노	warrior dual-wield damage spec
+DK	DKs	Death Knight	죽음의 기사	class from Wrath of the Lich King on
+DK	DKs	dishonorable kill		vanilla honor penalty for killing civilian NPCs, in Classic Era PvP talk
+unholy	uh dk	Unholy	부정	death knight spec
+BrM	brew, brewmaster	Brewmaster	양조	monk tank spec in Mists of Pandaria
+MW	mistweaver	Mistweaver	운무	monk healer spec in Mists of Pandaria
+WW	windwalker	Windwalker	풍운	monk damage spec in Mists of Pandaria
+WW		Whirlwind	소용돌이	warrior attack; also "WW axe", the Whirlwind Axe from the level 30 warrior quest
+WW		wrong window	창 실수(오타)	said by someone whose last line arrived in this chat by accident, e.g. a reply meant for a whisper tab; standing alone it is not Whirlwind
+spec	specc, specced, respec	talent specialization	특성	"what spec?" asks which talent tree; "respec" means changing talents
+dual spec	dualspec, DS spec	dual talent specialization	이중 특성	switching between two saved talent setups, Wrath on
+UD		Undead	언데드	the playable race, or the undead side of Stratholme in "strat ud"
+NE	nelf, night elf	Night Elf	나이트 엘프	playable race
+BE	belf, blood elf	Blood Elf	블러드 엘프	playable race from Burning Crusade on
+ally	allies, alli, alliance	Alliance player	얼라이언스(얼라)	members of the Alliance faction, as seen by either side
+# == Classic dungeons (levels are rough guides) ==
+RFC		Ragefire Chasm	성난불길 협곡	Horde starter dungeon inside Orgrimmar, about level 13-18
+WC		Wailing Caverns	통곡의 동굴	dungeon in the Barrens, about level 17-24
+DM	deadmines	The Deadmines	죽음의 폐광	Westfall dungeon, about level 17-26; choose this sense for low-level groups or when VanCleef is mentioned
+DM		Dire Maul	혈투의 전장	level 55-60 dungeon in Feralas; choose this sense with east, west, north, tribute or level-60 talk
+VC		The Deadmines	죽음의 폐광	named after its last boss Edwin VanCleef; used to avoid confusion with Dire Maul
+SFK		Shadowfang Keep	그림자송곳니 성채	dungeon in Silverpine Forest, about level 22-30
+BFD		Blackfathom Deeps	검은심연의 나락	dungeon in Ashenvale, about level 24-32
+stocks	stockades, stockade, stock	The Stockade	스톰윈드 지하감옥	Alliance dungeon inside Stormwind, about level 24-32
+gnomer	gnomeregan, gnomergan	Gnomeregan	놈리건	dungeon in Dun Morogh, about level 29-38
+RFK	kraul	Razorfen Kraul	가시덩굴 우리	dungeon in the southern Barrens, about level 29-38
+RFD		Razorfen Downs	가시덩굴 구릉	dungeon in the southern Barrens, about level 37-46
+SM		Scarlet Monastery	붉은십자군 수도원	dungeon in Tirisfal Glades with four wings for about level 28-45; a wing name usually follows
+GY	SM GY, graveyard	Scarlet Monastery - Graveyard	붉은십자군 수도원 - 묘지	first wing, about level 28-38, when it follows SM or stands in a dungeon advert
+GY	graveyard	graveyard	무덤	the place where dead players revive; in battlegrounds a capturable respawn point
+lib	SM lib, library	Scarlet Monastery - Library	붉은십자군 수도원 - 도서관	second wing, about level 32-40
+armory	SM arm, SM armory, ARM, arms wing	Scarlet Monastery - Armory	붉은십자군 수도원 - 무기고	third wing, about level 36-44, last boss Herod
+cath	SM cath, cathedral, cathy	Scarlet Monastery - Cathedral	붉은십자군 수도원 - 대성당	fourth wing, about level 38-45, bosses Mograine and Whitemane
+ulda	uldaman	Uldaman	울다만	dungeon in the Badlands, about level 41-51; "Uld" alone in Wrath means Ulduar
+ZF		Zul'Farrak	줄파락	troll dungeon in Tanaris, about level 44-54; mage "ZF boosts" farm its graveyard zombies
+mara	maraudon	Maraudon	마라우돈	dungeon in Desolace, about level 46-55; orange, purple and inner are its three parts
+princess run	princess runs, mara princess	Maraudon run to Princess Theradras	마라우돈 공주 런	short inner-Maraudon run through the Scepter portal to the last boss
+ST	sunken temple	Sunken Temple	가라앉은 사원	level 50-56 dungeon in the Swamp of Sorrows, officially the Temple of Atal'Hakkar; this sense in group adverts
+ST	single target	single target	단일 대상	in talk of damage or talents: damage on one enemy as opposed to AoE
+ST		Stables	마구간	capture point in Arathi Basin calls such as "3 inc ST"
+BRD		Blackrock Depths	검은바위 나락	large level 52-60 dungeon in Blackrock Mountain; runs are named after their goal
+arena run	arena runs, brd arena	Blackrock Depths Ring of Law run	검은바위 나락 투기장 런	repeated short run to the Ring of Law event for its loot, e.g. Savage Gladiator Chain
+emp run	emp runs, emperor run	Blackrock Depths run to Emperor Thaurissan	검은바위 나락 제왕 런	run to the last boss, often for Ironfoe or Hand of Justice
+lava run	lava runs	Blackrock Depths lava shortcut	검은바위 나락 용암 런	quick route across the lava to the later bosses
+jailbreak	jail break	Jail Break! quest	탈옥! 퀘스트	Blackrock Depths escort quest in the Alliance Onyxia attunement chain
+LBRS	lbr	Lower Blackrock Spire	검은바위 첨탑 하층	level 55-60 dungeon half of Blackrock Spire
+UBRS	ubr	Upper Blackrock Spire	검은바위 첨탑 상층	10-player upper half of Blackrock Spire, level 58-60; needs a key holder
+BRS		Blackrock Spire	검은바위 첨탑	the whole spire; the advert normally says lower or upper
+DME	DM E, DM east, east	Dire Maul - East	혈투의 전장 - 동쪽	east wing; "jump runs" skip to the last boss
+DMW	DM W, DM west, west	Dire Maul - West	혈투의 전장 - 서쪽	west wing with Immol'thar and Prince Tortheldrin
+DMN	DM N, DM north, north	Dire Maul - North	혈투의 전장 - 북쪽	ogre wing with King Gordok
+DMT	tribute run, DM trib, trib	Dire Maul North tribute run	혈투의 전장 북쪽 공물 런	killing the king while his guards stay alive for the tribute chest and the ogre buffs; "DMT buffs" are those world buffs
+jump run	jump runs, DME jump	Dire Maul East jump run	혈투의 전장 동쪽 점프 런	shortcut run that jumps down to Alzzin, popular for herbs and blue loot
+strat	stratholme	Stratholme	스트라솔름	level 58-60 dungeon in the Eastern Plaguelands; when a boss fight is being planned "strat" means strategy instead
+strat live	strat living, scarlet side, strat scarlet	Stratholme - Main Gate	스트라솔름 - 정문	the Scarlet Crusade half, entered by the main gate
+strat ud	strat dead, strat undead, UD strat, undead side, strat baron	Stratholme - Service Entrance	스트라솔름 - 공무용 입구	the undead half that ends with Baron Rivendare
+baron run	baron runs, 45 baron, 45 min baron, 45 run	timed Baron Rivendare run	남작 45분 런	undead Stratholme finished inside 45 minutes for the dungeon-set upgrade quest, or repeated for the Deathcharger mount
+scholo	scholomance	Scholomance	스칼로맨스	level 58-60 dungeon in the Western Plaguelands; needs a key holder
+# == Classic raids and world bosses ==
+MC		Molten Core	화산 심장부	40-player raid under Blackrock Mountain; this sense in raid adverts, attunement and loot talk
+MC	MCed, MC'd, mind controlled	Mind Control	정신 지배	priest spell and a boss mechanic; this sense when a player was taken over or a priest should control a mob
+ony	onyxia, onyx	Onyxia's Lair	오닉시아의 둥지	raid on the dragon Onyxia in Dustwallow Marsh; "ony head" and "ony buff" refer to the world buff from turning in her head
+BWL		Blackwing Lair	검은날개 둥지	40-player raid at the top of Blackrock Spire
+ZG		Zul'Gurub	줄구룹	20-player troll raid in Stranglethorn Vale; a 5-player heroic dungeon in Cataclysm
+AQ		Ahn'Qiraj	안퀴라즈	the two Silithus raids; the size normally follows as AQ20 or AQ40
+AQ20	aq 20, ruins of aq	Ruins of Ahn'Qiraj	안퀴라즈 폐허	20-player Ahn'Qiraj raid
+AQ40	aq 40, temple of aq	Temple of Ahn'Qiraj	안퀴라즈 사원	40-player Ahn'Qiraj raid ending with C'Thun
+naxx	nax, naxxramas, naxx40	Naxxramas	낙스라마스	floating necropolis raid, 40 players in vanilla and 10 or 25 in Wrath
+WB	world boss, world bosses	world boss	필드 보스	outdoor raid bosses such as Azuregos and Lord Kazzak
+WB	wbs, world buff, world buffs	world buffs	월드 버프	long city and zone buffs collected before a Classic raid
+WB		welcome back	다시 어서 오세요	reply to someone returning from a break
+kazzak	kaz	Lord Kazzak	군주 카자크	world boss in the Blasted Lands
+azu	azuregos	Azuregos	아주어고스	blue dragon world boss in Azshara
+green dragons	emerald dragons, dragons of nightmare, 4 dragons	Dragons of Nightmare	악몽의 용(에메랄드 용)	the four outdoor dragon bosses Ysondre, Lethon, Emeriss and Taerar
+rag	rags, ragnaros	Ragnaros	라그나로스	last boss of Molten Core
+domo	majordomo	Majordomo Executus	청지기 이그젝큐투스	Molten Core boss who summons Ragnaros
+geddon		Baron Geddon	남작 게돈	Molten Core boss with the Living Bomb; drops a binding for Thunderfury
+garr		Garr	가르	Molten Core boss; drops the other Thunderfury binding
+luci	lucifron	Lucifron	루시프론	first boss of Molten Core
+magmadar		Magmadar	마그마다르	Molten Core core-hound boss
+shaz	shazzrah	Shazzrah	샤즈라	Molten Core boss who teleports
+golemagg		Golemagg the Incinerator	초열의 골레마그	Molten Core boss
+sulfuron		Sulfuron Harbinger	설퍼론 사자	Molten Core boss with four healing priests
+razor	razorgore	Razorgore the Untamed	폭군 서슬송곳니	first boss of Blackwing Lair
+vael	vaelastrasz	Vaelastrasz the Corrupt	타락한 밸라스트라즈	second boss of Blackwing Lair, a threat and burn race
+broodlord		Broodlord Lashlayer	용기대장 래쉬레이어	third boss of Blackwing Lair, after the suppression room
+firemaw		Firemaw	화염아귀	Blackwing Lair drake boss
+ebonroc	ebon	Ebonroc	에본로크	Blackwing Lair drake boss
+flamegor		Flamegor	플레임고르	Blackwing Lair drake boss
+chrom	chromag, chromaggus	Chromaggus	크로마구스	Blackwing Lair boss before Nefarian
+nef	nefarian, nefa	Nefarian	네파리안	last boss of Blackwing Lair; "nef head" gives a city world buff
+hakkar		Hakkar	학카르	last boss of Zul'Gurub; "heart of hakkar" gives a world buff
+mandokir	bloodlord	Bloodlord Mandokir	혈군주 만도키르	Zul'Gurub raptor boss
+jindo	jin'do	Jin'do the Hexxer	주술사 진도	Zul'Gurub boss
+skeram		The Prophet Skeram	예언자 스케람	first boss of the Temple of Ahn'Qiraj
+bug trio	bug family, three bugs	Bug Trio	벌레 3형제(벌레 삼총사)	the three-bug council fight in the Temple of Ahn'Qiraj
+sartura		Battleguard Sartura	전투감시병 살투라	Temple of Ahn'Qiraj boss
+fankriss		Fankriss the Unyielding	불굴의 판크리스	Temple of Ahn'Qiraj boss
+visc	viscidus	Viscidus	비시디우스	optional slime boss in the Temple of Ahn'Qiraj that must be frozen
+huhu	huhuran	Princess Huhuran	공주 후후란	Temple of Ahn'Qiraj boss that needs nature resistance
+twins	twin emps, twin emperors	Twin Emperors	쌍둥이 제왕	the two emperors Vek'lor and Vek'nilash in the Temple of Ahn'Qiraj
+ouro		Ouro	아우로	optional sandworm boss in the Temple of Ahn'Qiraj
+cthun	c'thun	C'thun	쑨	last boss of the Temple of Ahn'Qiraj
+rajaxx		General Rajaxx	장군 라작스	Ruins of Ahn'Qiraj boss
+moam		Moam	모암	Ruins of Ahn'Qiraj boss
+buru		Buru the Gorger	먹보 부루	Ruins of Ahn'Qiraj boss
+ossi	ossirian	Ossirian the Unscarred	무적의 오시리안	last boss of the Ruins of Ahn'Qiraj
+anub	anub'rekhan	Anub'Rekhan	아눕레칸	first boss of the Naxxramas spider wing
+faerlina		Grand Widow Faerlina	귀부인 팰리나	Naxxramas spider wing boss
+maex	maexxna	Maexxna	맥스나	Naxxramas spider wing last boss
+noth		Noth the Plaguebringer	역병술사 노스	Naxxramas plague wing boss
+heigan	dance boss	Heigan the Unclean	부정의 헤이건	Naxxramas plague wing boss with the floor "dance"
+loatheb		Loatheb	로데브	Naxxramas plague wing last boss, strict healing rotation
+razuv	razuvious	Instructor Razuvious	훈련교관 라주비어스	Naxxramas military wing boss
+gothik		Gothik the Harvester	영혼의 착취자 고딕	Naxxramas military wing boss
+4H	4hm, four horsemen, horsemen	The Four Horsemen	4인 기사단	Naxxramas military wing last encounter
+patchwerk	patchw	Patchwerk	패치워크	Naxxramas construct wing boss used as a pure damage check
+patch		Patchwerk	패치워크	only inside Naxxramas boss talk ("patch down", "wipe on patch")
+patch		game update	패치	the usual meaning: "next patch", "patch notes", "since the patch"
+grobb	grobbulus	Grobbulus	그라불루스	Naxxramas construct wing boss
+gluth		Gluth	글루스	Naxxramas construct wing boss
+thadd	thaddius	Thaddius	타디우스	Naxxramas construct wing last boss with the polarity mechanic
+sapph	sapphiron	Sapphiron	사피론	frost wyrm boss before Kel'Thuzad; needs frost resistance
+KT	kel'thuzad, kelthuzad	Kel'Thuzad	켈투자드	last boss of Naxxramas; in Burning Crusade KT is also Kael'thas in Tempest Keep
+baron	baron riv, rivendare	Baron Rivendare	남작 리븐데어	last boss of undead Stratholme; drops the Deathcharger's Reins
+drak	drakk, drakkisath, general drak	General Drakkisath	사령관 드라키사스	last boss of Upper Blackrock Spire, needed for the Blackwing Lair and Onyxia attunements
+rend		Warchief Rend Blackhand	대족장 렌드 블랙핸드	Upper Blackrock Spire boss; "rend buff" is the Horde world buff from turning in his head
+gandling		Darkmaster Gandling	암흑스승 간들링	last boss of Scholomance
+emp	emperor	Emperor Dagran Thaurissan	제왕 다그란 타우릿산	last boss of Blackrock Depths
+angerforge		General Angerforge	사령관 앵거포지	Blackrock Depths boss who drops Hand of Justice
+arugal		Archmage Arugal	대마법사 아루갈	last boss of Shadowfang Keep
+vancleef	van cleef	Edwin VanCleef	에드윈 밴클리프	last boss of the Deadmines
+herod		Herod	헤로드	boss of the Scarlet Monastery Armory
+whitemane		High Inquisitor Whitemane	종교재판관 화이트메인	boss of the Scarlet Monastery Cathedral
+mograine		Scarlet Commander Mograine		boss of the Scarlet Monastery Cathedral
+hogger		Hogger	들창코	notorious elite gnoll in Elwynn Forest, often joked about as a raid boss
+# == Classic loot, sets and consumables ==
+T0	tier 0, d1, dungeon set	Dungeon Set 1	던전 세트 1(0티어)	the blue class sets from level-60 dungeons
+T0.5	tier 0.5, d2, dungeon set 2	Dungeon Set 2	던전 세트 2(0.5티어)	the upgraded dungeon sets from a long quest chain
+T1	tier 1	Tier 1 raid set	1티어 세트	class sets from Molten Core
+T2	tier 2	Tier 2 raid set	2티어 세트	class sets from Blackwing Lair, with helm from Onyxia and legs from Ragnaros
+T2.5	tier 2.5	Tier 2.5 raid set	2.5티어 세트	class sets from the Temple of Ahn'Qiraj
+T3	tier 3	Tier 3 raid set	3티어 세트	class sets from vanilla Naxxramas
+tier	tier token, token, tokens	tier set piece	티어 세트(토큰)	raid class-set items, or the tokens exchanged for them from Burning Crusade on
+TF	thunderfury	Thunderfury, Blessed Blade of the Windseeker	우레폭풍 - 바람추적자의 성검	legendary sword; "TF prio" concerns who gets its bindings
+bindings	binding	Bindings of the Windseeker	바람추적자의 족쇄	the two Molten Core drops that start the Thunderfury quest
+sulf	sulfuras	Sulfuras, Hand of Ragnaros	설퍼라스 - 라그나로스의 손	legendary mace made with the Eye of Sulfuras from Ragnaros
+eye of sulf	sulf eye, eye of sulfuras	Eye of Sulfuras	설퍼라스의 눈	legendary crafting drop from Ragnaros
+atiesh		Atiesh, Greatstaff of the Guardian	아티쉬 - 수호자의 지팡이	legendary staff assembled from splinters in vanilla Naxxramas
+HoJ		Hand of Justice	심판의 손길	melee trinket from Blackrock Depths; this sense in loot or reserve talk
+HoJ		Hammer of Justice	심판의 망치	paladin stun; this sense in combat or PvP talk
+SGC		Savage Gladiator Chain	잔인한 검투사 사슬 갑옷	chest armour from the Blackrock Depths arena event
+ironfoe		Ironfoe	무쇠폭군	mace from Emperor Thaurissan in Blackrock Depths
+DFT		Drake Fang Talisman	비룡이빨 부적	melee trinket from Ebonroc in Blackwing Lair
+CTS		Chromatically Tempered Sword	오색으로 달궈진 용검	sword from Chromaggus in Blackwing Lair
+ashkandi	ash kandi, AK	Ashkandi, Greatsword of the Brotherhood	아쉬칸디 - 기사단의 대검	two-handed sword from Nefarian
+BRE		Bonereaver's Edge	각골의 검	two-handed sword from Ragnaros
+OEB		Obsidian Edged Blade	흑요석 대검	two-handed sword from Molten Core
+perds	perd, perdition	Perdition's Blade	전멸의 비수	dagger from Ragnaros
+CHT		Core Hound Tooth	심장부 사냥개 이빨	dagger from the Molten Core chest
+viskag	vis'kag, visk	Vis'kag the Bloodletter	혈문도 비스카그	sword from Onyxia
+deathbringer	DB axe	Deathbringer	죽음의 인도자	axe from Onyxia
+edgies	edgemasters, edgemaster	Edgemaster's Handguards	검술가의 장갑	rare world-drop gloves prized for their weapon skill
+LHH	lionheart	Lionheart Helm	사자심장 투구	crafted plate helm, a top damage item
+OSC	ony cloak, onyxia cloak	Onyxia Scale Cloak	오닉시아 비늘 망토	crafted cloak required for the Nefarian fight
+MCP	pummeler, pummelers	Manual Crowd Pummeler	수동 고철 압축기	Gnomeregan mace whose haste charge feral druids farm
+ToEP		Talisman of Ephemeral Power	단명의 마력 부적	caster trinket from Molten Core
+ZHC		Zandalarian Hero Charm	잔달라의 영웅 부적	caster trinket from the Heart of Hakkar quest
+NLT	neltharions tear, neltharion's tear	Neltharion's Tear	넬타리온의 눈물	caster trinket from Nefarian, in Blackwing Lair loot talk
+rejuv gem	rejuv	Rejuvenating Gem	원기회복의 보석	healer trinket from Blackwing Lair
+mageblade		Azuresong Mageblade	하늘노래 마법검	caster sword from Molten Core
+bene	benediction, anathema	Benediction	축복의 지팡이	priest quest staff started by the Eye of Divinity; Anathema is its shadow form
+rhok	rhok'delar, rhokdelar	Rhok'delar, Longbow of the Ancient Keepers	라크델라 - 고대수호자의 장궁	hunter quest bow started by the Ancient Petrified Leaf
+hunter leaf	petrified leaf	Ancient Petrified Leaf	단단한 고대의 잎사귀	hunter-only drop from the Molten Core chest
+striker	strikers mark	Striker's Mark	명사수의 징표	bow from Magmadar
+quick strike	QSR	Quick Strike Ring	속전속결의 반지	melee ring from Molten Core
+band of accuria	accuria	Band of Accuria	아큐리아의 고리	hit ring from Ragnaros
+onslaught		Onslaught Girdle	맹습의 벨트	plate belt from Ragnaros
+devilsaur	devilsaur set	Devilsaur Armor set	데빌사우루스 세트	crafted leather set and the Un'Goro leather it is made from; a staple of pre-raid melee gear
+righteous orb	orbs, orb, righteous orbs	Righteous Orb	정의의 보주	Stratholme drop needed for the Crusader enchant; often reserved
+crusader	crus, crusader enchant	Enchant Weapon - Crusader	무기 마법부여 - 성전사	the most wanted melee weapon enchant in vanilla
+fiery	fiery weapon	Enchant Weapon - Fiery Weapon	무기 마법부여 - 불타는 무기	cheap levelling weapon enchant
+lifesteal	lifestealing	Enchant Weapon - Lifestealing	무기 마법부여 - 생명력 흡수	weapon enchant
+flask	flasks, flasked	flask	영약	the strongest long-lasting consumable, kept through death; "flasked" means one is active
+titans	titan flask	Flask of the Titans	티탄의 영약	health flask used by tanks
+supreme power	FoSP, sp flask	Flask of Supreme Power	강력한 마력의 영약	spell damage flask
+distilled	distilled wisdom, wisdom flask	Flask of Distilled Wisdom	순수한 지혜의 영약	mana flask used by healers
+petri	petri flask	Flask of Petrification	석화의 영약	turns the drinker to stone; used to save world buffs or escape death
+mongoose		Elixir of the Mongoose	살쾡이의 비약	agility and crit elixir; from Burning Crusade also the Mongoose weapon enchant
+giants		Elixir of Giants	거인의 비약	strength elixir
+FAP	faps, free action	Free Action Potion	자유 의지의 물약	makes the drinker immune to stuns and snares for a while
+LIP	lips	Limited Invulnerability Potion	제한된 무적 물약	brief physical immunity; warriors use it to shed threat
+GFPP	fire prot, fire prot pot	Greater Fire Protection Potion	상급 화염 보호 물약	absorbs fire damage; stock item for Molten Core and Blackwing Lair
+GNPP	nature prot	Greater Nature Protection Potion	상급 자연 보호 물약	absorbs nature damage; used in Ahn'Qiraj
+GSPP	shadow prot pot	Greater Shadow Protection Potion	상급 암흑 보호 물약	absorbs shadow damage; used in Naxxramas
+GAPP	arcane prot	Greater Arcane Protection Potion	상급 비전 보호 물약	absorbs arcane damage
+GFrPP	frost prot	Greater Frost Protection Potion	상급 냉기 보호 물약	absorbs frost damage; used on Sapphiron
+pot	pots, potion, potions	potion	물약	a drinkable consumable; "mana pot", "health pot"; "pre-pot" means drinking one just before the pull
+runes	dark rune, demonic rune, rune	Dark Rune	암흑의 룬	mana-restoring consumable that costs health; shares its timer with Demonic Runes
+sapper	sappers	Goblin Sapper Charge	고블린 공병 폭탄	engineering explosive used for area damage
+nades	nade, grenade, grenades	engineering grenades	수류탄	thrown explosives that stun, popular in PvP
+juju	jujus	Winterfall juju items	주주(겨울눈 부적)	Winterspring quest consumables such as Juju Power and Juju Might
+scorpok	assay	Ground Scorpok Assay	스콜포크 가루약	Blasted Lands agility consumable
+ROIDS	roids	R.O.I.D.S.	근육 촉진제	Blasted Lands strength consumable
+zanza	spirit of zanza	Spirit of Zanza	잔자의 기백	Zul'Gurub stamina and spirit consumable
+songflower	SF buff, sflower	Songflower Serenade	노래꽃 버프	Felwood flower world buff
+DMF	darkmoon	Darkmoon Faire	다크문 유랑단	travelling fair; "DMF buff" is its damage world buff
+ony buff	ony head, dragonslayer, nef head, head buff	Rallying Cry of the Dragonslayer	오닉시아 머리 버프	city-wide world buff triggered when an Onyxia or Nefarian head is turned in
+rend buff	WCB, warchief	Warchief's Blessing	렌드 버프	Horde world buff given in the Crossroads
+ZG buff	heart buff, hakkar buff	Spirit of Zandalar	줄구룹 심장 버프	world buff from turning in the Heart of Hakkar
+chrono	boon, chronoboon	Chronoboon Displacer	시간축복 재배열기	item that stores world buffs to be restored later
+WF	windfury, wf totem	Windfury Totem	질풍의 토템	shaman totem that melee groups want; "WF group"
+HS	hearth, hearthing	Hearthstone	귀환석	the teleport-home item; "hs is on cd"
+HS	healthstone, cookie, cookies	Healthstone	생명석	healing stone a warlock hands out before a pull
+SS	soulstone, ss'd	Soulstone	영혼석	warlock stone that lets the bearer self-resurrect after a wipe
+mage water	mage food, mage table, water pls	conjured mage refreshments	마법사 물빵	asking a mage to conjure drinks and bread
+bandage	bandages, bandy	bandage	붕대	First Aid healing item
+DC mount	deathcharger, baron mount	Deathcharger's Reins	죽음의 군마 고삐	rare mount from Baron Rivendare in Stratholme
+# == Buffs and common spells ==
+buff	buffs, buffed, rebuff	beneficial spell	버프	"buff pls" asks for the usual class buffs
+debuff	debuffs	harmful effect	디버프	"debuff slots" matters in vanilla raids where only a few fit on a boss
+BoK	kings	Blessing of Kings	왕의 축복	paladin buff that raises all stats
+BoM	might	Blessing of Might	힘의 축복	paladin attack power buff
+BoW	wis, wisdom buff	Blessing of Wisdom	지혜의 축복	paladin mana regeneration buff
+BoS	salv, salvation	Blessing of Salvation	구원의 축복	paladin threat-reduction buff
+BoL		Blessing of Light	빛의 축복	paladin buff that improves paladin heals on the target
+BoF	freedom	Blessing of Freedom	자유의 축복	paladin spell that removes movement impairment
+BoSanc	sanc	Blessing of Sanctuary	성역의 축복	paladin tank buff
+LoH		Lay on Hands	신의 축복	paladin emergency full heal
+DI		Divine Intervention	성스러운 중재	paladin sacrifice that protects one player through a wipe
+bubble	bubbled, bubble hearth	Divine Shield	천상의 보호막	the paladin immunity spell; "bubble hearth" is escaping with it
+MotW	mark, motw	Mark of the Wild	야생의 징표	druid stat buff
+GotW	gotw	Gift of the Wild	야생의 선물	group version of the druid buff
+thorns		Thorns	가시	druid buff that damages attackers
+innervate		Innervate	정신 자극	druid mana-restoring spell, usually requested by healers
+AI	int buff	Arcane Intellect	신비한 지능	mage intellect buff
+fort	stam buff, PWF, fortitude	Power Word: Fortitude	신의 권능: 인내	priest stamina buff
+PoF		Prayer of Fortitude	인내의 기원	group version of the priest stamina buff
+spirit buff	DS buff, divine spirit	Divine Spirit	천상의 정신	priest spirit buff
+DS		Divine Spirit	천상의 정신	priest buff, in talk of buffs
+DS	demo sac	Demonic Sacrifice	악의 제물	warlock talent, in talk of warlock specs such as "DS/Ruin"
+DS		Dragon Soul	용의 영혼	last raid of Cataclysm
+PI		Power Infusion	마력 주입	priest damage cooldown cast on a caster
+PWS	PW:S, pw shield	Power Word: Shield	신의 권능: 보호막	priest absorb shield
+SWP	SW:P	Shadow Word: Pain	어둠의 권능: 고통	the priest's basic shadow DoT, kept rolling on the target; written with or without the colon
+SWP	sunwell	Sunwell Plateau	태양샘 고원	last raid of the Burning Crusade, in raid adverts
+shackle		Shackle Undead	언데드 속박	priest crowd control on undead
+fear ward	FW	Fear Ward	공포의 수호물	priest buff that blocks one fear, originally dwarf-only
+sheep	poly, sheeped, polymorph	Polymorph	변이	mage crowd control; "sheep moon" means polymorph the mob marked with the moon
+sap	sapped	Sap	기절시키기	rogue crowd control applied from stealth before the pull
+blind		Blind	실명	rogue crowd control
+kick	kicks, kicked	interrupt a cast	차단	named after the rogue ability: any class's spell interrupt is a kick ("kick the heal"). Unrelated use: "kick him" = throw a player out of the group
+interrupt	interrupts, int rotation	interrupt	차단	stopping an enemy cast; an "interrupt rotation" assigns turns
+CS	counterspell	Counterspell	마법 차단	mage interrupt; "CS the healer"
+pummel		Pummel	자루 공격	warrior interrupt
+banish		Banish	추방	warlock crowd control on demons and elementals
+CoE		Curse of the Elements	원소의 저주	warlock curse that raises fire and frost damage taken
+CoS		Curse of Shadow	어둠의 저주	warlock curse that raises shadow and arcane damage taken; in Wrath CoS is the Culling of Stratholme dungeon
+CoR		Curse of Recklessness	무모함의 저주	warlock curse that lowers armor and stops fleeing
+CoT	tongues	Curse of Tongues	언어의 저주	warlock curse that slows casting; from Burning Crusade CoT is also the Caverns of Time
+CoA		Curse of Agony	고통의 저주	warlock damage-over-time curse
+SB		Shadow Bolt	어둠의 화살	warlock main nuke
+FD	feign	Feign Death	죽은척하기	hunter ability that drops threat
+MD	misdirect	Misdirection	눈속임	hunter threat transfer from Burning Crusade on; "MD tank" means cast it on the tank
+MD		Mass Dispel	대규모 무효화	priest area dispel, in talk of priests or removing magic
+trap	traps, trapped, ice trap	Freezing Trap	얼음의 덫	hunter crowd control
+tranq	tranq shot	Tranquilizing Shot	평정의 사격	hunter shot that removes Frenzy from bosses such as Magmadar; this sense when hunters or frenzy are mentioned
+tranq		Tranquility	평온	druid channelled group heal with a long cooldown; this sense in healing talk
+hibernate	hib	Hibernate	겨울잠	druid crowd control on beasts and dragonkin
+FF	faerie fire	Faerie Fire	요정의 불꽃	druid armor-reduction debuff
+sunder	sunders	Sunder Armor	방어구 가르기	warrior armor-reduction debuff; "5 sunders" asks to wait for full stacks
+TC	thunderclap	Thunder Clap	천둥벼락	warrior attack-slowing debuff
+demo shout		Demoralizing Shout	사기의 외침	warrior attack power debuff
+taunt	taunted	Taunt	도발	forcing a mob to attack the tank; "taunt resist"
+SnD		Slice and Dice	난도질	rogue attack speed finisher
+vanish		Vanish	소멸	rogue escape that drops threat
+evo	evocation	Evocation	환기	mage mana recovery channel
+blizz		Blizzard	눈보라	the mage area spell; with a capital B and in talk of servers or bans it is the company
+nova	frost nova	Frost Nova	얼음 회오리	mage root
+AoE	aoe'd	area of effect	광역	damage or healing that hits several targets; "AoE farm" is mass-pulling for experience
+DoT	dots, dotted	damage over time	도트(지속 피해)	periodic damage spells; "dot everything"
+HoT	hots	heal over time	지속 치유(핫)	periodic healing spells; from Cataclysm HoT is also the Hour of Twilight dungeon
+CC	cc'd, crowd control	crowd control	군중 제어(메즈)	disabling an enemy for a while with sheep, sap, trap and the like
+dispel	dispell, dispels, cleanse, decurse	remove a harmful effect	해제	asking healers or mages to remove magic, curses, poison or disease
+purge	purged	Purge	정화	shaman spell that strips buffs from an enemy
+brez	bres, b-rez, battle rez, battle res, combat res, cr	combat resurrection	전투 부활(전부)	reviving a player during the fight, in vanilla only by a druid's Rebirth
+BL	lust, bloodlust	Bloodlust	피의 욕망	shaman haste cooldown from Burning Crusade on; "lust at 30%" times it
+hero	heroism	Heroism	영웅심	Alliance name of the Bloodlust effect; "hero" can also mean a heroic dungeon
+tremor		Tremor Totem	진동의 토템	shaman totem that breaks fear and sleep
+grounding		Grounding Totem	마법정화 토템	shaman totem that absorbs a spell
+NS		Nature's Swiftness	자연의 신속함	druid or shaman instant-cast cooldown; in Outland talk NS is Netherstorm
+shield wall	SWall	Shield Wall	방패의 벽	warrior defensive cooldown
+reck	recklessness	Recklessness	무모한 희생	warrior damage cooldown
+DW	dual wield	dual wield	쌍수	fighting with a weapon in each hand
+2H	2h, two-hand, 2hander	two-handed weapon	양손 무기	weapon type or fighting style
+1H	1h, one-hand	one-handed weapon	한손 무기	weapon type
+MH	main hand, mainhand	main-hand weapon	주장비	gear slot; in Burning Crusade raid adverts MH is Mount Hyjal
+OH	off hand, offhand	off-hand item	보조장비	gear slot
+wep	weap, wpn	weapon	무기	gear slot
+trinket	trink	trinket	장신구	gear slot; "trinket" as a verb means using the PvP escape trinket
+proc	procs, procced	chance-on-hit effect triggering	발동	"it procced" means the random effect went off
+crit	crits, critted	critical strike	치명타	stat or a critical hit
+hit cap	hitcap, hit capped	hit rating cap	적중 한계(적중 캡)	the amount of hit needed so attacks no longer miss a boss
+AP		attack power	전투력	melee and ranged damage stat
+mp5		mana per five seconds	5초당 마나 회복	healer regeneration stat
+stam	sta	stamina	체력	stat
+agi		agility	민첩성	stat
+str		strength	힘	stat
+spi	spr, spirit	spirit	정신력	stat
+int		intellect	지능	stat; in a buff request it means Arcane Intellect
+def	defense, def cap	defense	방어 숙련	tank stat; the "def cap" makes a tank immune to critical hits
+FR	fire res, fire resist	fire resistance	화염 저항	resistance gear asked of tanks for Molten Core, Onyxia and Blackwing Lair
+NR	nature res, nature resist	nature resistance	자연 저항	resistance gear for Ahn'Qiraj, above all Princess Huhuran
+FrR	frost res, frost resist	frost resistance	냉기 저항	resistance gear for Sapphiron
+SR gear	shadow res	shadow resistance	암흑 저항	resistance gear, used on a few Naxxramas and Burning Crusade bosses
+# == Combat and raid-leading ==
+body pull	bodypull, face pull, facepull	pull by walking too close	몸풀(근접 애드)	accidental pull
+LoS	los pull, line of sight	line of sight	시야(시야 끊기)	hiding behind a wall so casters must run to you, or being unable to see a target
+aggro	agro, aggroed	enemy attention	어그로	"I have aggro" means the mob is attacking me
+threat	threat cap	threat	위협 수준	the hidden score that decides whom a mob attacks; "watch threat"
+kite	kiting, kited, kiter	lead an enemy around while staying out of reach	카이팅(끌고 다니기)	assigned to hunters and mages
+adds	add	additional enemies	쫄(추가 몹)	extra mobs that join a boss fight or an accidental pull
+trash	trash mobs	non-boss enemies	잡몹	the packs between bosses; "trash loot" drops from them
+pat	pats, patrol	patrolling enemy group	정찰몹(로머)	"wait for pat" before pulling
+mob	mobs	computer-controlled enemy	몹	any hostile NPC
+elite	elites	elite enemy	정예	a stronger mob meant for a group
+rare	rares, rare spawn	rare enemy	희귀 몹	uncommon named mob with better loot
+nuke	nuking	burst damage	극딜	"nuke skull" means kill the marked target fast
+focus	focus fire, FF target	concentrate attacks on one target	점사	everyone hits the same enemy
+burn phase	burn boss, burn it	all-out damage phase	극딜 구간	ignore other mechanics and kill quickly
+pop	popped, popping	use a cooldown or consumable	사용(쿨기 켜기)	"pop CDs", "pop a pot"; "queue popped" means a battleground or dungeon invitation arrived
+CDs	pop cds, save cds	cooldowns	쿨기	powerful abilities with long reuse timers
+spread	spread out	stand apart	산개	positioning call against chain or splash damage
+soak	soaking, soaker	stand in an effect on purpose to share or absorb it	분담(대신 맞기)	assignment for a mechanic that must hit someone
+tank swap	taunt swap, swap	tanks exchange the boss	탱커 교대	done when a stacking debuff gets too high
+cleave	cleaves, cleaving	frontal attack that hits several players	회전베기(전방 광역)	"boss cleaves, stay behind"; also damage dealers hitting several mobs at once
+tail swipe	breath	dragon positional attacks	꼬리치기/브레스	stand at the dragon's side, never in front or behind
+void zone	stand in fire, fire on ground, dont stand in fire	harmful ground effect	바닥(장판)	"don't stand in fire" means move out of ground effects
+enrage	enrages, berserk	enrage	격노(광폭화)	the boss grows much stronger, usually after a time limit
+phase	p1, p2, p3	fight stage	페이즈	bosses change behaviour by stage; P followed by a number in release talk is a content phase of Classic
+wipe	wiped, wiping, wipe it	whole group dies	전멸	"wipe it" tells everyone to die quickly and restart
+reset boss	reset, evade	boss returns to start	초기화	the encounter resets when everyone leaves combat or the boss evades
+rebuff	rebuffs, buff up	reapply buffs	버프 다시	after a wipe
+skull	kill order, skull first	skull marker	해골 징표	raid icon for the first kill target, then cross; moon, square and the other icons usually mark crowd-control targets, e.g. "sheep moon"
+RC	ready check, rdy check	ready check	전투 준비 확인	the leader's prompt asking everyone to confirm readiness
+r	rdy	ready	준비 완료	a lone "r" or "rdy" answers a ready check; "r?" asks if people are ready
+oom	OOM	out of mana	마나 없음(엠탐 필요)	a caster cannot cast any more
+lom		low on mana	마나 부족	warning before the next pull
+mana break	drinking, need mana, need drink	pause to restore mana	엠탐	asks the group to wait before the next pull
+inc	incoming, incs	incoming	접근 중(인컴)	enemies or a pull on the way; in battlegrounds followed by a place and a number of attackers
+omw	otw, on my way	on my way	가는 중	travelling to the group
+run back	running back, corpse run	walk back as a ghost	시체 찾기(시체 런)	returning to one's corpse after dying
+rez sickness	res sickness, spirit rez	resurrection sickness	부활 후유증	penalty for reviving at the spirit healer
+FP	flight path, flightpath	flight path	비행 지점(와이번/그리핀 조련사)	the taxi point of a zone
+meeting stone	summoning stone, summon stone, summ stone	meeting stone	만남의 돌	the stone outside a dungeon; from Burning Crusade it summons party members
+bio	bio break	bathroom break	화장실	a short pause request during a raid
+afk	AFK	away from keyboard	자리 비움	not at the computer
+brb		be right back	금방 올게요	short absence
+bbl	bbs, bbiab	be back later or soon	나중에 다시 올게요	leaving for a while
+dc	d/c, dced, dc'd, disconnect	disconnected	접속 끊김(튕김)	a player dropped offline
+lag	lagging, laggy	network delay	렉	connection or server stutter
+zerg	zerging	overwhelm with numbers	닥돌(물량 러시)	rushing an objective without tactics
+cheese	cheesing	beat something with a trick	꼼수	exploiting terrain or a mechanic
+exploit		abuse of a bug	버그 악용	against the rules
+# == PvP ==
+BG	BGs, bgs	battleground	전장	instanced PvP match
+WSG	warsong	Warsong Gulch	전쟁노래 협곡	10-player capture-the-flag battleground
+AB		Arathi Basin	아라시 분지	15-player battleground with five capture points
+AV		Alterac Valley	알터랙 계곡	40-player battleground
+EotS	eots	Eye of the Storm	폭풍의 눈	Burning Crusade battleground with four towers and a flag
+SotA	sota	Strand of the Ancients	고대의 해안	Wrath battleground with siege vehicles
+IoC		Isle of Conquest	정복의 섬	Wrath 40-player battleground
+TP		Twin Peaks	쌍둥이 봉우리	Cataclysm capture-the-flag battleground; in Alterac Valley TP is Tower Point
+BfG		The Battle for Gilneas	길니아스 전투지	Cataclysm battleground with three capture points
+RBG	rbgs, rated bg	rated battleground	평점제 전장	organised rated team battleground from Cataclysm on
+WG		Wintergrasp	겨울손아귀	Wrath outdoor PvP zone with a timed battle
+arena	arenas	arena	투기장	small rated team PvP from Burning Crusade on; in a Blackrock Depths advert it is the Ring of Law event
+2s	2v2, 2's, twos	2v2 arena	투기장 2대2	arena bracket
+3s	3v3, 3's, threes	3v3 arena	투기장 3대3	arena bracket
+5s	5v5, 5's, fives	5v5 arena	투기장 5대5	arena bracket
+rating	cr, mmr, rated	arena or battleground rating	평점	"1800 cr" is a current rating used as a requirement
+FC	flag carrier	flag carrier	깃발 운반자(깃수)	the teammate holding the enemy flag
+EFC	enemy fc	enemy flag carrier	적 깃발 운반자	the opponent holding your flag; "EFC tun" means they are in the tunnel
+cap	capped, capping, caps	capture	점령	take a flag or a base; elsewhere "cap" is a maximum such as level cap or honor cap
+def	defend, defending, defense	defend	수비	staying to guard a base or the flag room
+ninja cap	ninja capped, ninja the base	sneak capture	몰래 점령	taking a base while its defenders are away
+turtle	turtling	all-out defending	수비 굳히기(거북이)	a team that only defends, stalling the match
+LM	mill, lumber	Lumber Mill	제재소	capture point in Arathi Basin
+stables	stable	Stables	마구간	capture point in Arathi Basin
+SHGY	SH gy, stonehearth	Stonehearth Graveyard	돌심장 무덤	Alterac Valley graveyard in the Alliance half
+SPGY	stormpike gy	Stormpike Graveyard	스톰파이크 무덤	Alterac Valley graveyard near the Alliance base
+SFGY	snowfall, SF gy	Snowfall Graveyard	눈사태 무덤	neutral central graveyard in Alterac Valley
+IBGY	iceblood gy, IB gy	Iceblood Graveyard	얼음피 무덤	Alterac Valley graveyard in the Horde half
+FWGY	frostwolf gy, FW gy	Frostwolf Graveyard	서리늑대 무덤	Alterac Valley graveyard near the Horde base
+RH	relief hut	Frostwolf Relief Hut		last Horde graveyard in Alterac Valley
+AS	aid station	Stormpike Aid Station		last Alliance graveyard in Alterac Valley
+galv	galvangar	Captain Galvangar		Horde captain in Alterac Valley
+bal	balinda	Captain Balinda Stonehearth		Alliance captain in Alterac Valley
+drek	drek'thar	Drek'Thar		Horde general, the final objective for the Alliance in Alterac Valley
+vann	vanndar	Vanndar Stormpike		Alliance general, the final objective for the Horde in Alterac Valley
+towers	bunkers	Alterac Valley towers and bunkers	경비탑/참호	only in Alterac Valley talk: burning them weakens the enemy general
+HK	hks	honorable kill	명예 승수	a kill that grants honor
+honor	honour, honor farm	honor points	명예 점수	PvP currency and, in vanilla, weekly ranking progress
+rank	r14, r13, r10, ranking, ranker	PvP rank	계급	the vanilla honor ladder; R14 is Grand Marshal or High Warlord
+marks	bg marks, AV marks, WSG marks, AB marks	battleground marks of honor	전장 훈장	tokens from battleground matches, in PvP reward talk
+gank	ganked, ganking, ganker	ambush kill	뒤치기(갱킹)	being killed in the open world by a stronger or hidden enemy
+camp	camped, camping, corpse camp	repeatedly kill a player at their corpse	시체 캠핑	also waiting at a spot for a rare spawn
+wpvp	world pvp	open-world PvP	필드 쟁	fighting outside battlegrounds
+duel	duels, dueling	duel	결투	a friendly one-on-one fight
+twink	twinks	low-level character with the best possible gear	트윙크(저레벨 전장 캐릭)	built to dominate a battleground level bracket such as 19 or 29
+bracket	19s, 29s, 39s, 49s	battleground level bracket	전장 레벨 구간	twinks are named after the top level of their bracket
+PvP trinket	insignia, medallion	PvP escape trinket	급장(계급장)	removes crowd control; "trinketed" means the enemy just used it
+MS debuff	healing debuff	healing reduction	치유 감소	Mortal Strike style effect in PvP
+# == Characters, progress, realm ==
+alt	alts	secondary character	부캐	any character other than the one its owner treats as the main; an "alt run" is a raid of such characters
+main	mains	primary character	본캐	the character a player focuses on
+toon	toons	character	캐릭터	any character on an account
+lvl	lv, lvling, lvls	level	레벨	character or item level
+ding	dinged	level up	레벨 업	announcing a new level; guildmates answer "gz"
+xp	exp, xp/hr	experience points	경험치	earned toward the next level
+rested	rest xp	rested experience	휴식 경험치	bonus experience from logging out in an inn
+rep	reputation, rep grind	reputation	평판	standing with a faction; the tiers run friendly, honored, revered, exalted
+exalted	revered, honored	reputation tiers	확고한 동맹/매우 우호적/우호적	highest, second and third reputation standings
+q	quest, quests, qs	quest	퀘스트	"share q" asks the leader to share it; "q" can also mean queue
+queue	que, queued, requeue	queue	대기열	waiting for a battleground, the dungeon finder or a full realm
+elite quest	group quest, grp quest	group quest	파티 퀘스트	quest tuned for several players; "LFG elite q"
+escort		escort quest	호위 퀘스트	protecting an NPC along a path
+grind	grinding, grinded	repetitive killing for experience, gold or reputation	노가다(닥사)	describes long repeated effort
+farming	farmed, farmer, on farm	repeat content for loot or gold	파밍	"on farm" means a raid the guild clears easily; in an Arathi Basin call "farm" is the Farm base
+ilvl	item level, gs, gearscore	item level	아이템 레벨(템렙)	gear strength measure; GearScore is the Wrath-era addon number
+cap	level cap, capped	maximum	한계치(만렙)	highest reachable level, or a weekly limit on a currency
+layer	layers, layering, layer hop	realm layer	레이어(위상)	parallel copy of the world; "inv for layer" asks to be moved to another copy by a group invite
+xfer	transfer, xferred	character transfer	서버 이전	paid or free realm move
+HC	hardcore	Hardcore	하드코어	Classic realms where death is permanent; this sense on those realms or when dying is the topic
+HC	H, heroic, heroics, hc run	heroic difficulty	영웅 난이도	the harder dungeon or raid mode from Burning Crusade on; "H" before a dungeon name means its heroic version
+SF	SSF, self found, self-found	Self-Found mode	자급자족 모드	Hardcore option without trading or the auction house
+mak'gora	makgora, mak gora	duel to the death	막고라(죽음의 결투)	Hardcore duel where the loser dies permanently
+F		paying respects	삼가 고인의 명복을(애도)	a lone "F" answers a death, above all on Hardcore realms
+RIP	rip	rest in peace	명복을 빕니다	reaction to a death or a wipe, often joking
+SoD		Season of Discovery	디스커버리 시즌	seasonal Classic realms with runes and new raids
+era	classic era	Classic Era	클래식 오리지널(클래식 에라)	the permanent vanilla realms
+anni	anniversary, anniv	Anniversary realms	20주년 서버	the fresh Classic realms opened for the 20th anniversary
+TBC	tbc	The Burning Crusade	불타는 성전	first expansion
+wotlk	wrath, lk, WotLK	Wrath of the Lich King	리치 왕의 분노	second expansion; LK is also the Lich King boss
+cata	cataclysm	Cataclysm	대격변	third expansion
+MoP	mists, pandaria	Mists of Pandaria	판다리아의 안개	fourth expansion
+prepatch	pre-patch	pre-expansion patch	사전 패치	the weeks before an expansion launches
+nerf	nerfed, nerfs	weakened by a patch	너프(하향)	complaint or news about balance changes
+buffed		strengthened by a patch	버프(상향)	in talk of patches; otherwise having buffs applied
+addon	addons, add-on, mod	interface add-on	애드온	"DBM", "WA" and "Details" are common ones
+DBM	bigwigs	Deadly Boss Mods	DBM(보스 타이머 애드온)	boss timer add-on; "DBM pull" is its countdown
+WA	weakaura, weakauras	WeakAuras	위크오라	alert add-on; "link WA" asks for a shared setup
+macro	macros	macro	매크로	a scripted button
+ticket		support ticket	GM 문의	a request to Blizzard support
+report	reported, reporting	report to Blizzard	신고	flagging a player for breaking the rules
+ignore	ignored, /ignore	ignore list	차단	blocking a player's messages
+disc	discord, dc voice, voice	Discord voice chat	디스코드(음성 채팅)	"disc req" means voice chat is required for the raid; next to a priest it is the Discipline spec
+# == Everyday chat slang ==
+ty	thx, tyvm, tysm, thanks, thnx, tnx	thank you	감사합니다	thanks
+np	no prob	no problem	괜찮아요(별말씀을)	reply to thanks or an apology
+yw		you're welcome	천만에요	reply to thanks
+gz	grats, gratz, gratz!, congrats, gratzz	congratulations	축하해요(ㅊㅊ)	said for a level-up or a loot drop
+gl	GL	good luck	행운을 빌어요	often "gl hf" at the start or "gl" when leaving a group
+hf		have fun	즐겜하세요	usually paired with gl
+glhf	gl hf	good luck, have fun	화이팅, 즐겜하세요	opening courtesy
+gg	ggs, GG	good game	수고하셨습니다	said at the end of a run or match; sarcastic after a failure
+wp		well played	잘하셨어요	praise after a fight
+gj	gw, good job	good job	잘했어요	praise
+ez		easy	쉽네	boast after a win, often taunting
+ofc		of course	당연하죠	agreement
+nvm	nm	never mind	아니에요, 신경 쓰지 마세요	withdrawing a question
+idk	dunno	I don't know	모르겠어요	admits not knowing
+idc		I don't care	상관없어요	indifference
+imo	imho	in my opinion	제 생각에는	introduces a personal view
+tbh		to be honest	솔직히	introduces a frank remark
+afaik		as far as I know	제가 알기로는	hedges a statement
+iirc		if I remember correctly	제 기억이 맞다면	hedges a recollection
+btw		by the way	그런데	changes the subject
+fyi		for your information	참고로	introduces a piece of information
+jk	j/k	just kidding	농담이에요	takes back the previous line as a joke
+lol	lul, lolz, lel	laughing	ㅋㅋ	laughter
+lmao	lmfao, rofl	laughing hard	ㅋㅋㅋㅋ	stronger laughter
+kek		laughing	ㅋㅋ	"lol" spoken by a Horde player appears as "kek" to the Alliance; now general gamer laughter
+bur		laughing	ㅋㅋ	"lol" spoken by an Alliance player appears as "bur" to the Horde
+haha	hehe, hah	laughing	ㅎㅎ	laughter
+omg	omfg	oh my god	헐	surprise
+wtf	wth	what the hell	뭐야	surprise or anger
+smh		shaking my head	절레절레	disappointment
+gtg	g2g, gotta go	got to go	가봐야 해요	leaving
+cya	cu, see ya, cyas	see you	또 봐요	goodbye
+ttyl		talk to you later	나중에 얘기해요	goodbye
+gn	gnight, nn, nite	good night	좋은 밤 되세요	goodbye at night
+pls	plz, plx, pleas	please	부탁해요	polite request, often after "inv" or "summ"
+sry	srry, soz, sorry	sorry	미안해요	apology
+mb	my b, my bad	my bad	제 실수예요	admitting a mistake
+u		you	당신	"u there?", "ty u2"
+ur		your or you're	당신의	depends on the sentence: possessive or "you are"
+y		why	왜	a lone "y?" asks for a reason; "y" as a reply can mean yes
+ye	yea, yeh, yep, yup	yes	네	agreement
+rn		right now	지금	time expression
+atm		at the moment	지금은	time expression, not a cash machine
+asap		as soon as possible	최대한 빨리	urgency
+irl		in real life	현실에서	life outside the game
+tho		though	그래도	sentence-final contrast
+bc	cuz, cus, b/c	because	왜냐하면	gives a reason
+w/		with	~와 함께	"w/ me"
+w/o		without	~ 없이	preposition shorthand
+b4		before	전에	time shorthand, e.g. "need b4 greed"
+m8		mate	친구	British-style address
+bro	bruh, dude, man	friendly address	형씨(친구)	casual address, not a family member
+ppl		people	사람들	plural noun shorthand
+any1	ne1, anyone?	anyone	누구	"any1 for mara?" asks who wants to join
+some1	sm1	someone	누군가	pronoun shorthand
+no1		no one	아무도	pronoun shorthand, not "number one"
+noob	nub, newb, n00b, noobs	beginner	뉴비(초보)	mild insult or self-deprecation
+l2p	learn2play	learn to play	실력이나 키워라	insult
+git gud		get good	실력을 키워라	taunt
+rekt		wrecked	발렸다	badly beaten
+toxic		hostile behaviour	비매너	complaint about a rude player
+salty		bitter	삐짐(짜증)	upset about losing
+troll	trolling, trolled	deliberately disruptive player	트롤(고의 방해)	unless the playable Troll race is clearly meant
+elitist	tryhard, try hard, sweaty	player who takes the game very seriously	빡겜러	usually a complaint
+casual	casuals	relaxed player	라이트 유저	opposite of hardcore raider
+scrub	bad, baddie	unskilled player	못하는 사람	insult
+pog	poggers	excitement	대박	reaction to a lucky drop
+rng	RNG	random luck	운(랜덤)	"bad rng" blames chance for drops or resists
+# == Spanish seen on North American realms ==
+busco	buscando, se busca	looking for	구합니다	Spanish: seeking a group, a player or an item
+necesito	necesitamos, se necesita	I need / we need	필요합니다	Spanish: the role or item needed follows
+falta	faltan, nos falta	missing	부족(구함)	Spanish: "falta 1 tanque" means one tank is still needed
+tanque		tank	탱커	Spanish and Portuguese for the tank role
+sanador	sanadora, heal	healer	힐러	Spanish for the healer role
+vendo	vendiendo	selling	팝니다	Spanish and Portuguese equivalent of WTS
+compro	comprando	buying	삽니다	Spanish and Portuguese equivalent of WTB
+cambio		I trade	교환합니다	Spanish equivalent of WTT
+grupo		group	파티	Spanish and Portuguese; "armo grupo" means I am forming a group
+mazmorra	mazmorras, calabozo	dungeon	던전	Spanish
+banda		raid	공격대	Spanish client term for a raid group
+hermandad	gremio, guilda, clan	guild	길드	Spanish hermandad or gremio, Portuguese guilda
+oro	ouro	gold	골드	Spanish oro, Portuguese ouro
+susurro	susurra, susurrar, susurren	whisper	귓속말	Spanish: "susurra" asks for a whisper
+alguien	alguem, alguém	someone	누구	Spanish alguien, Portuguese alguém: "alguien para BRD?" asks who will join
+ayuda	ajuda	help	도움	Spanish ayuda, Portuguese ajuda
+gracias	grax, obrigado, obg, vlw, valeu	thank you	감사합니다	Spanish gracias, Portuguese obrigado or valeu
+de nada	d nada	you're welcome	천만에요	Spanish and Portuguese
+hola	ola, oi, buenas	hello	안녕하세요	Spanish hola or buenas, Portuguese oi
+jaja	jajaja, jajajaja, jeje, kkk, kkkk, rsrs	laughing	ㅋㅋ	Spanish jaja, Brazilian kkk or rsrs
+nivel	nível	level	레벨	Spanish and Portuguese
+mision	misión, misiones, missão	quest	퀘스트	Spanish misión, Portuguese missão
+cuanto	cuánto, quanto, precio, preço	how much / price	얼마(가격)	asking or stating a price
+por favor	porfa, porfavor, pf, pfv	please	부탁합니다	Spanish and Portuguese
+listo	listos, pronto	ready	준비 완료	Spanish listo, Portuguese pronto
+vamos	dale, bora	let's go	갑시다	Spanish vamos or dale, Brazilian bora
+invita	invitar, inviten, convite	invite	초대	Spanish: "invita" asks for a group invitation
+habla español	hablan español, español, latino, latinos	Spanish-speaking	스페인어 사용	marks a Spanish-speaking group or guild
+BR	brasileiro, brasileiros, pt-br	Brazilian	브라질(포르투갈어 사용)	marks a Portuguese-speaking group or guild; "BR?" asks if someone is Brazilian
+# == The Burning Crusade ==
+kara	karazhan	Karazhan	카라잔	10-player raid in Deadwind Pass
+gruul	gruuls	Gruul's Lair	그룰의 둥지	25-player raid in Blade's Edge Mountains
+mag	mags, magtheridon	Magtheridon's Lair	마그테리돈의 둥지	25-player raid under Hellfire Citadel
+SSC		Serpentshrine Cavern	불뱀 제단	25-player raid in Zangarmarsh with Lady Vashj
+TK	the eye	Tempest Keep	폭풍우 요새	25-player raid in Netherstorm with Kael'thas
+AD		Argent Dawn	은빛 여명회	Plaguelands reputation faction; "AD rep", "AD trinket", "AD turn-ins"
+CE		Cenarion Expedition	세나리온 원정대	Burning Crusade reputation faction based in Zangarmarsh; in reputation talk
+SoS		Swamp of Sorrows	슬픔의 늪	zone east of Deadwind Pass, when a place is meant; "sos" in a plea is just a call for help
+exo		The Exodar	엑소다르	draenei capital, when a city or portal is meant (Burning Crusade onward)
+exo		Exorcism	퇴마술	paladin damage spell, in paladin or combat talk
+BB		Booty Bay	무법항	goblin port at the south tip of Stranglethorn; in travel, boat or fishing-contest talk
+WS		Winterspring	여명의 설원	northern Kalimdor zone, when travelling or farming is discussed; in battleground talk WS is Warsong
+TH		Twilight Highlands	황혼의 고원	Cataclysm zone, only on realms that have Cataclysm or later and when a place is meant
+QD		Isle of Quel'Danas	쿠엘다나스 섬	Burning Crusade daily-quest island; "QD dailies"
+RR		Redridge Mountains	붉은마루 산맥	Alliance levelling zone east of Elwynn, when a place is meant
+SG		Searing Gorge	이글거리는 협곡	zone north of Blackrock Mountain, when a place is meant
+hyjal	MH, mount hyjal	Hyjal Summit	하이잘 정상	25-player Caverns of Time raid
+BT		Black Temple	검은 사원	25-player raid in Shadowmoon Valley with Illidan
+ZA		Zul'Aman	줄아만	10-player troll raid with timed chests; a 5-player heroic in Cataclysm
+ramps	ramp, ramparts	Hellfire Ramparts	지옥불 성루	first Outland dungeon
+BF		The Blood Furnace	피의 용광로	Hellfire Citadel dungeon
+SH	shat halls, shh, shattered	The Shattered Halls	으스러진 손의 전당	Hellfire Citadel level 70 dungeon; in Mists of Pandaria SH is Scarlet Halls
+SP	slave pens	The Slave Pens	강제 노역소	Coilfang dungeon, when it stands in a Burning Crusade dungeon advert
+UB	underbog	The Underbog	지하수렁	Coilfang dungeon
+SV	steamvault, steamvaults, steam vault	The Steamvault	증기 저장고	Coilfang level 70 dungeon; for hunters SV is the Survival spec
+MT	mana tombs, tombs	Mana-Tombs	마나 무덤	Auchindoun dungeon, in a Burning Crusade dungeon advert
+crypts	auch crypts	Auchenai Crypts	아키나이 납골당	Auchindoun dungeon
+seth	sethekk, sethek	Sethekk Halls	세데크 전당	Auchindoun dungeon
+slabs	SL, shadow labs, slab, shadow lab	Shadow Labyrinth	어둠의 미궁	Auchindoun level 70 dungeon
+OHF	old hillsbrad, durnholde, OHB	Old Hillsbrad Foothills	옛 힐스브래드 구릉지	Caverns of Time dungeon
+black morass	morass	The Black Morass	검은늪	Caverns of Time dungeon
+mech	mechanar	The Mechanar	메카나르	Tempest Keep dungeon
+bot	botanica	The Botanica	신록의 정원	Tempest Keep dungeon, when it stands in a dungeon advert
+arc	arca, arcatraz	The Arcatraz	알카트라즈	Tempest Keep dungeon
+MgT	MGT, magisters, mag terrace	Magisters' Terrace	마법학자의 정원	dungeon on the Isle of Quel'Danas
+heroic key	rev, revered key	heroic dungeon key	영웅 던전 열쇠	reputation-locked key needed to enter Burning Crusade heroics
+badge	badges, BoJ	Badge of Justice	정의의 휘장	heroic and raid currency of the Burning Crusade
+nether	primal nether, nethers	Primal Nether	황천의 근원	crafting material from heroic last bosses
+vortex	nether vortex	Nether Vortex	황천의 소용돌이	raid crafting material
+shatt	shat, shattrath	Shattrath City	샤트라스	the Outland capital
+aldor	scryer, scryers	Aldor and Scryers	알도르/점술가	the two rival Shattrath factions; a player chooses one
+SSO		Shattered Sun Offensive	무너진 태양 공격대	Isle of Quel'Danas faction
+daily	dailies, dailys	daily quest	일일 퀘스트(일퀘)	repeatable once-a-day quests
+flying	epic flying, fly	flying mount skill	나는 탈것	"epic flying" is the fast flying skill
+prince	malchezaar	Prince Malchezaar	공작 말체자르	last boss of Karazhan, in Karazhan talk
+nightbane		Nightbane	파멸의 어둠	summoned dragon boss in Karazhan
+vashj		Lady Vashj	여군주 바쉬	last boss of Serpentshrine Cavern
+kael	kt, kael'thas	Kael'thas Sunstrider	캘타스 선스트라이더	last boss of Tempest Keep
+illidan	illi	Illidan Stormrage	일리단 스톰레이지	last boss of the Black Temple
+glaives	warglaives, glaive, warglaive	Warglaive of Azzinoth	아지노스의 전투검	legendary weapon pair from Illidan
+drums		leatherworking drums	북(가죽세공 북)	group haste buff items such as Drums of Battle
+# == Wrath of the Lich King ==
+naxx 10	naxx10, naxx 25, naxx25	Naxxramas	낙스라마스	the Wrath version with 10 or 25 players
+EoE	maly, malygos	The Eye of Eternity	영원의 눈	Wrath raid against Malygos
+VoA		Vault of Archavon	아카본 석실	Wintergrasp raid, available to the side that holds the zone
+uld	uldu, ulduar	Ulduar	울두아르	Wrath raid, on realms that have Wrath of the Lich King or later; "uld HM" means with hard modes
+uld	ulda	Uldaman	울다만	Badlands dungeon, about level 41-51; the only sense on vanilla and Burning Crusade realms, where Ulduar does not exist
+ToC	TotC, toc10, toc25	Trial of the Crusader	십자군의 시험장	Wrath raid; ToC 5 or "toc5" is the dungeon Trial of the Champion
+ToGC	togc	Trial of the Grand Crusader	십자군 사령관의 시험장	heroic version of Trial of the Crusader
+ICC	icc10, icc25	Icecrown Citadel	얼음왕관 성채	last major Wrath raid, ending with the Lich King
+RS		The Ruby Sanctum	루비 성소	last Wrath raid with Halion
+LK	lich king, arthas	The Lich King	리치 왕	last boss of Icecrown Citadel; "LK" also stands for the expansion
+UK		Utgarde Keep	우트가드 성채	Wrath dungeon
+UP		Utgarde Pinnacle	우트가드 첨탑	Wrath dungeon
+nex	nexus	The Nexus	마력의 탑	Wrath dungeon
+AN		Azjol-Nerub	아졸네룹	Wrath dungeon
+AK	ahnkahet, old kingdom	Ahn'kahet: The Old Kingdom	안카헤트: 고대 왕국	Wrath dungeon under Azjol-Nerub, in a dungeon advert
+DTK	drak'tharon	Drak'Tharon Keep	드락타론 성채	Wrath dungeon
+VH		The Violet Hold	보랏빛 요새	Wrath dungeon in Dalaran
+GD	gundrak	Gundrak	군드락	Wrath dungeon
+HoS		Halls of Stone	돌의 전당	Wrath dungeon
+HoL		Halls of Lightning	번개의 전당	Wrath dungeon
+occ	oculus	The Oculus	마력의 눈	Wrath dungeon
+CoS	culling, strat past	The Culling of Stratholme	옛 스트라솔름	Wrath Caverns of Time dungeon, in a Wrath dungeon advert
+ToC5	toc 5	Trial of the Champion	용사의 시험장	Wrath dungeon
+FoS	forge of souls	The Forge of Souls	영혼의 제련소	Icecrown dungeon
+PoS	pit of saron	Pit of Saron	사론의 구덩이	Icecrown dungeon
+HoR		Halls of Reflection	투영의 전당	Icecrown dungeon
+RDF	dungeon finder, random heroic, rhc	random dungeon finder	무작위 던전 찾기	the automatic group tool from late Wrath on
+10m	10 man, 10man, 10N, 10H	10-player raid	10인 공격대	raid size; N and H mark normal and heroic
+25m	25 man, 25man, 25N, 25H	25-player raid	25인 공격대	raid size; N and H mark normal and heroic
+HM	hard mode, hardmode, hard modes	hard mode	하드 모드	optional harder version of a boss
+achiev	achieve, ach, achievement, achi	achievement	업적	"link achiev" asks for proof of an earlier kill
+emblems	emblem, EoF, EoT	emblems	문장	Wrath dungeon and raid currencies such as Emblem of Frost and Emblem of Triumph
+dal	dala	Dalaran	달라란	the Wrath capital city
+shadowmourne	smourne	Shadowmourne	어둠한	legendary axe from Icecrown Citadel
+val'anyr	valanyr, fragments	Val'anyr, Hammer of Ancient Kings	발아니르 - 고대 왕의 망치	legendary healing mace from Ulduar fragments
+# == Cataclysm ==
+BWD		Blackwing Descent	검은날개 강림지	Cataclysm raid
+BoT		The Bastion of Twilight	황혼의 요새	Cataclysm raid, when a raid is being formed
+TotFW	To4W, t4w, tofw	Throne of the Four Winds	네 바람의 왕좌	Cataclysm raid
+FL	firelands	Firelands	불의 땅	Cataclysm raid
+BH		Baradin Hold	바라딘 요새	Tol Barad raid for the side holding the zone
+BRC		Blackrock Caverns	검은바위 동굴	Cataclysm dungeon
+TotT	throne of tides	Throne of the Tides	파도의 왕좌	Cataclysm dungeon
+SC	stonecore	The Stonecore	바위심장부	Cataclysm dungeon
+VP	vortex pinnacle	The Vortex Pinnacle	소용돌이 누각	Cataclysm dungeon, in a dungeon advert
+VP	valor	Valor Points	용맹 점수	weekly-capped gear currency from Cataclysm on
+JP	justice	Justice Points	정의 점수	gear currency from Cataclysm on
+GB		Grim Batol	그림 바톨	Cataclysm dungeon
+HoO		Halls of Origination	시초의 전당	Cataclysm dungeon
+LCotT	lost city, LC	Lost City of the Tol'vir	톨비르의 잃어버린 도시	Cataclysm dungeon
+ET		End Time	시간의 끝	Dragon Soul patch dungeon
+WoE		Well of Eternity	영원의 샘	Dragon Soul patch dungeon
+HoT		Hour of Twilight	황혼의 시간	Dragon Soul patch dungeon, in a dungeon advert
+TB		Tol Barad	톨 바라드	Cataclysm PvP zone; this sense when a battle, dailies or Baradin Hold are mentioned
+DW	deathwing	Deathwing	데스윙	last boss of Dragon Soul, in Cataclysm raid talk
+tmog	xmog, transmog, mog	transmogrification	형상변환(형변)	changing an item's look, from late Cataclysm on
+reforge	reforging	reforging	재연마	swapping part of one stat for another on gear
+# == Mists of Pandaria ==
+MSV	MV, vaults	Mogu'shan Vaults	모구샨 금고	first Pandaria raid
+HoF		Heart of Fear	공포의 심장	Pandaria raid
+ToES	TES	Terrace of Endless Spring	영원한 봄의 정원	Pandaria raid
+ToT		Throne of Thunder	천둥의 왕좌	Pandaria raid
+SoO		Siege of Orgrimmar	오그리마 공성전	last Pandaria raid, ending with Garrosh
+TJS	jade serpent, TotJS	Temple of the Jade Serpent	옥룡사	Pandaria dungeon
+SSB	brewery	Stormstout Brewery	스톰스타우트 양조장	Pandaria dungeon
+SPM	shado-pan, shadopan	Shado-Pan Monastery	음영파 수도원	Pandaria dungeon
+MSP	mogu palace	Mogu'shan Palace	모구샨 궁전	Pandaria dungeon
+GSS	GotSS, setting sun	Gate of the Setting Sun	석양문	Pandaria dungeon
+SNT	niuzao	Siege of Niuzao Temple	니우짜오 사원 공성전투	Pandaria dungeon
+CM	cms, challenge mode, challenge modes	challenge mode	도전 모드	timed dungeon mode; "CM gold" is its top medal, often sold as a carry
+scenario	scenarios, HSC	scenario	시나리오	short three-player instance; HSC is a heroic scenario
+sha	sha of anger	Sha of Anger	분노의 샤	Pandaria world boss
+galleon		Galleon	갈레온	Pandaria world boss
+oon	oondasta	Oondasta	운다스타	Pandaria world boss on the Isle of Giants
+nalak		Nalak	나락크	Pandaria world boss on the Isle of Thunder
+celestials		Celestials	네 천신	the four world bosses on the Timeless Isle
+ordos		Ordos	오르도스	Timeless Isle world boss that needs the legendary cloak
+garrosh		Garrosh Hellscream	가로쉬 헬스크림	last boss of the Siege of Orgrimmar
+flex		flexible raid difficulty	탄력적 공격대	raid mode that scales with group size
+coin	coins, bonus roll	bonus roll token	추가 전리품 주화	spent for an extra loot chance on a boss
+TI	timeless	Timeless Isle	영원의 섬	late Pandaria outdoor zone
+IoT		Isle of Thunder	천둥의 섬	Pandaria daily quest zone
+# == Added senses ==
+VC	voice	voice chat	음성 채팅	in talk of Discord or joining a call; in a low-level group advert VC is the Deadmines
+pre-raid	preraid, pre raid	pre-raid gear	레이드 전 장비	the dungeon and crafted gear collected before the first raids
+c		copper	코퍼	directly after a number it is a price in copper
+TP	tower point	Tower Point	거점 보초탑	Horde tower in Alterac Valley, in an Alterac Valley call
+# == Capital cities typed in lower case as often as in capitals ==
+SW		Stormwind City	스톰윈드	Alliance capital; "port to SW" asks a mage for a portal there
+UC		Undercity	언더시티	Horde capital of the Forsaken
+# == Russian ==
+ищу	ищем, ищет, ищут	looking for	구함	Russian: a group, a guild or a player is being sought
+нужен	нужна, нужны, нужно, надо	need	필요	Russian: the role or item that is needed follows
+танк	танка, танки, танков	tank	탱커	Russian
+хил	хила, хилы, хилов, хилер, хилера, лекарь	healer	힐러	Russian
+дд	дамагер, дамагера, дпс	damage dealer	딜러	Russian; РДД is a ranged and МДД a melee damage dealer
+рдд		ranged damage dealer	원거리 딜러	Russian
+мдд		melee damage dealer	근접 딜러	Russian
+лс	личку, личка, пм	whisper	귓속말	Russian "личные сообщения"; "пишите в лс" means whisper me
+ги	гильдия, гильдию, гильдии, гильда	guild	길드	Russian
+пати	группа, группу, группы, пачка, пачку	group	파티	Russian
+рейд	рейда, рейды, рейдов, рейде	raid	공격대	Russian
+инст	инсты, инста, данж, данжи, подземелье	dungeon	던전	Russian
+ключ	ключи, ключа	dungeon key	열쇠	Russian; a key item or the player who holds it
+ачива	ачивы, ачивку, ачивка, ачив, ачиву	achievement	업적	Russian; "линк ачивы" asks for the achievement link as proof
+линк	линкани, линканите, линкуйте	link	링크	Russian: paste the item or achievement into chat
+гер	героик, героика, гера	Heroic	영웅	Russian for the Heroic difficulty
+обычка	нормал	Normal	일반	Russian for the Normal difficulty
+продам	продаю, втс	selling	팝니다	Russian for WTS
+куплю	покупаю, втб	buying	삽니다	Russian for WTB
+голд	голда, золото, золота	gold	골드	Russian
+крафт	скрафчу, крафчу	crafting	제작	Russian: a crafter offering or a buyer seeking a craft
+чант	чанты, зачарую, зачарка	enchant	마법부여	Russian
+шмот	шмотки, шмотка, гир	gear	장비	Russian slang for equipment
+лут		loot	전리품	Russian
+ролл	рол, роллим	roll	주사위	Russian: rolling dice for loot
+вайп	вайпнулись, вайпы	wipe	전멸	Russian: the whole group died
+босс	босса, боссы, боссов, боссе	boss	우두머리(보스)	Russian
+трэш	треш	trash mobs	잡몹	Russian: the ordinary enemies between bosses
+агро		aggro	어그로	Russian
+бафф	баф, бафы, баффы	buff	버프	Russian
+рес	ресните, реснуть, ресаните	resurrect	부활	Russian
+сумон	саммон, суммон, призыв	summon	소환	Russian: a warlock summon is asked for or offered
+кд		cooldown	재사용 대기시간(쿨)	Russian; also the weekly raid lockout
+бг		battleground	전장	Russian
+арена	арену, арены, арене	arena	투기장	Russian
+альянс	али, алик, алики	Alliance	얼라이언스	Russian
+орда	орду, орды, ордынец, ордынцы	Horde	호드	Russian
+спс	спасибо, пасиб	thanks	고마워요	Russian
+плз	пж, пжл, пожалуйста	please	부탁해요	Russian
+привет	прив, здарова	hello	안녕하세요	Russian
+лвл	уровень, уровня	level	레벨	Russian
+твинк	твинка, альт	alt character	부캐	Russian: a secondary character
+фарм	фармить, фармим	farming	파밍	Russian
+воин	вар, воина	Warrior	전사	Russian class name
+паладин	пал, паладина	Paladin	성기사	Russian class name
+охотник	хант, охотника	Hunter	사냥꾼	Russian class name
+разбойник	рога, разбойника	Rogue	도적	Russian class name
+жрец	прист, жреца	Priest	사제	Russian class name
+шаман	шам, шамана	Shaman	주술사	Russian class name
+маг	мага	Mage	마법사	Russian class name
+чернокнижник	лок, варлок, чернокнижника	Warlock	흑마법사	Russian class name
+друид	дру, друида	Druid	드루이드	Russian class name
+рыцарь смерти	дк	Death Knight	죽음의 기사	Russian class name
+монах	монк	Monk	수도사	Russian class name
+Штормград		Stormwind City	스톰윈드	Russian name of the Alliance capital
+Оргриммар	огри, оргри	Orgrimmar	오그리마	Russian name of the Horde capital
+Стальгорн		Ironforge	아이언포지	Russian name of the dwarf capital
+Даларан		Dalaran	달라란	Russian name of the mage city
+Огненные Недра		Molten Core	화산 심장부	Russian name of the raid
+Логово Крыла Тьмы	ЛКТ	Blackwing Lair	검은날개 둥지	Russian name of the raid
+Наксрамас	накс	Naxxramas	낙스라마스	Russian name of the raid
+Каражан	кара	Karazhan	카라잔	Russian name of the raid
+Зул'Гуруб	ЗГ	Zul'Gurub	줄구룹	Russian name of the raid
+Стратхольм	страт	Stratholme	스트라솔름	Russian name of the dungeon
+Некроситет	некро	Scholomance	스칼로맨스	Russian name of the dungeon
+Мертвые копи	копи	The Deadmines	죽음의 폐광	Russian name of the dungeon
+Монастырь Алого ордена	МАО, монастырь	Scarlet Monastery	붉은십자군 수도원	Russian name of the dungeon
+Глубины Черной горы	ГЧГ	Blackrock Depths	검은바위 나락	Russian name of the dungeon
+Забытый Город		Dire Maul	혈투의 전장	Russian name of the dungeon
+Мародон		Maraudon	마라우돈	Russian name of the dungeon
+Зул'Фаррак	ЗФ	Zul'Farrak	줄파락	Russian name of the dungeon
+Ущелье Песни Войны	УПВ	Warsong Gulch	전쟁노래 협곡	Russian name of the battleground
+Альтеракская долина	АД	Alterac Valley	알터랙 계곡	Russian name of the battleground
+Низина Арати		Arathi Basin	아라시 분지	Russian name of the battleground
+# == Chinese (simplified, mainland realms) ==
+坦克	坦, 主坦	tank	탱커	Chinese; a lone T in Chinese text also means tank
+治疗	奶, 奶妈, 奶爸	healer	힐러	Chinese; 奶 (milk) is slang for healing or a healer
+输出		damage dealer	딜러	Chinese; written DPS as often
+组队	求组, 开组, 组人	forming or seeking a group	파티 모집	Chinese
+来个	来一个, 缺个, 缺	need one more	1명 구함	Chinese: the role or class that is still missing follows, like LF1M
+副本		instance	인스턴스 던전	Chinese: any dungeon or raid
+团本	团队本, 团队副本	raid	공격대 던전	Chinese
+史诗	紫装	epic quality	영웅 등급	Chinese: purple items
+英雄		Heroic	영웅	Chinese name of the Heroic difficulty
+毕业		fully geared	졸업(장비 완성)	Chinese "graduated": holding the best gear of the tier; 包毕业 advertises a carry that guarantees it
+出售	卖	selling	팝니다	Chinese for WTS
+收购	求购, 收	buying	삽니다	Chinese for WTB
+金币	金	gold	골드	Chinese; after a number it is a price
+公会	工会	guild	길드	Chinese
+密我	私聊, 悄悄话, 密语	whisper me	귓속말 주세요	Chinese
+老板	消费	paying customer	손님	Chinese: the buyer in a paid carry or gold-bid run
+金团	G团	gold-bid raid	골드 경매 공격대(골팟)	Chinese term: raid members bid gold for every drop and the gold collected is split among the raid afterwards - what English adverts call a GDKP
+开荒		progression	진도(트라이)	Chinese: learning bosses the group has not killed yet
+灭团	团灭	wipe	전멸	Chinese: the whole group died
+打断		interrupt	차단	Chinese
+驱散		dispel	해제	Chinese
+嗜血	英勇	Bloodlust	피의 욕망(블러드)	Chinese; 英勇 is Heroism, the same group haste cooldown
+战复		battle resurrection	전투 부활	Chinese
+装等	装备等级	item level	아이템 레벨	Chinese
+橙装	橙	legendary item	전설 아이템	Chinese "orange gear"
+萌新	新手	newcomer	뉴비	Chinese
+联盟		Alliance	얼라이언스	Chinese
+部落		Horde	호드	Chinese
+战士	ZS	Warrior	전사	Chinese class name; ZS is its pinyin initials
+圣骑士	骑士	Paladin	성기사	Chinese class name; 奶骑 is a holy and 防骑 a protection paladin
+猎人	LR	Hunter	사냥꾼	Chinese class name
+盗贼	贼, DZ	Rogue	도적	Chinese class name
+牧师		Priest	사제	Chinese class name; in Chinese text MS is its pinyin initials
+萨满	萨满祭司	Shaman	주술사	Chinese class name; in Chinese text SM is its pinyin initials
+法师	FS	Mage	마법사	Chinese class name
+术士		Warlock	흑마법사	Chinese class name; in Chinese text SS is its pinyin initials
+德鲁伊	小德	Druid	드루이드	Chinese class name
+死亡骑士	死骑	Death Knight	죽음의 기사	Chinese class name
+武僧		Monk	수도사	Chinese class name
+暴风城		Stormwind City	스톰윈드	Chinese name of the Alliance capital
+奥格瑞玛		Orgrimmar	오그리마	Chinese name of the Horde capital
+铁炉堡		Ironforge	아이언포지	Chinese name of the dwarf capital
+达拉然		Dalaran	달라란	Chinese name of the mage city
+熔火之心		Molten Core	화산 심장부	Chinese name of the raid
+黑翼之巢	黑翼	Blackwing Lair	검은날개 둥지	Chinese name of the raid
+奥妮克希亚	黑龙	Onyxia's Lair	오닉시아의 둥지	Chinese: the Onyxia raid
+祖尔格拉布	祖格	Zul'Gurub	줄구룹	Chinese name of the raid
+安其拉神殿	安其拉	Temple of Ahn'Qiraj	안퀴라즈 사원	Chinese name of the 40-player raid
+纳克萨玛斯		Naxxramas	낙스라마스	Chinese name of the raid
+卡拉赞		Karazhan	카라잔	Chinese name of the raid
+斯坦索姆		Stratholme	스트라솔름	Chinese name of the dungeon
+通灵学院	通灵	Scholomance	스칼로맨스	Chinese name of the dungeon
+黑石塔	黑上, 黑下	Blackrock Spire	검은바위 첨탑	Chinese; 黑上 is the upper and 黑下 the lower half
+黑石深渊		Blackrock Depths	검은바위 나락	Chinese name of the dungeon
+厄运之槌	厄运	Dire Maul	혈투의 전장	Chinese name of the dungeon
+玛拉顿		Maraudon	마라우돈	Chinese name of the dungeon
+祖尔法拉克		Zul'Farrak	줄파락	Chinese name of the dungeon
+奥达曼		Uldaman	울다만	Chinese name of the dungeon
+诺莫瑞根		Gnomeregan	놈리건	Chinese name of the dungeon
+血色修道院	血色	Scarlet Monastery	붉은십자군 수도원	Chinese name of the dungeon
+死亡矿井	死矿	The Deadmines	죽음의 폐광	Chinese name of the dungeon
+哀嚎洞穴		Wailing Caverns	통곡의 동굴	Chinese name of the dungeon
+影牙城堡	影牙	Shadowfang Keep	그림자송곳니 성채	Chinese name of the dungeon
+战歌峡谷	战歌	Warsong Gulch	전쟁노래 협곡	Chinese name of the battleground
+阿拉希盆地	阿拉希	Arathi Basin	아라시 분지	Chinese name of the battleground
+奥特兰克山谷	奥山	Alterac Valley	알터랙 계곡	Chinese name of the battleground
