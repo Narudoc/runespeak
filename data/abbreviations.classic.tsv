@@ -4,14 +4,14 @@
 # korean = official Korean name when english is an official name in official_names.classic.tsv,
 # otherwise the usual Korean player term (may be empty); note = when the sense applies.
 # An ambiguous abbr has one row per sense.
-# Rows: 992
+# Rows: 1002
 abbr	also	english	korean	note
 # == Finding a group, recruiting ==
-LFG		looking for group	파티 구함	the writer wants to join a group; usually followed by a role and a dungeon or raid
+LFG		looking for group	파티 구함	the writer wants to join a group; usually followed by a role and a dungeon or raid; a role or class right before or after it is the writer's own ('tank LFG', 'LFG tank' = a tank looking for a group), not a role wanted; only a role after 'need' later in the line is one that is missing ('LFG UBRS need healer' = '검은바위 첨탑 상층 파티 구함, 힐러 필요')
 LFM		looking for more	파티원 구함	a group that is recruiting; usually followed by the roles still missing
 LF1M	LF2M, LF3M, LF4M, LF5M	looking for N more	N명 구함	the digit is how many spots are still open in the group
-LF		looking for	구함	followed by what is wanted: a role, a group, an item or a crafter
-LFW		looking for work	제작 의뢰 받습니다	a crafter offering a profession service for tips or a fee
+LF		looking for	구함	direction depends on word order: a role or class BEFORE LF is the writer, who wants to join ('dps LF stocks' = a damage dealer looking for a Stockade group, '딜러인데 스톰윈드 지하감옥 파티 구함'); a role AFTER LF is what a group wants ('LF dps stocks' = '스톰윈드 지하감옥 딜러 구함'); roles on both sides ('2 dps LF tank SM') = those in front are already there, the one behind is wanted ('딜러 2명 있음, 수도원 탱커 구함'); otherwise the item, crafter or group wanted follows
+LFW		looking for work	제작해 드립니다	the writer IS the crafter and offers a profession service for tips or a fee ('LFW tailor' = '재봉 제작해 드립니다', 'LFW enchanter' = '마법부여 해 드립니다'); never '~ 구함'
 LFR		looking for raid	공격대 구함	in Classic Era a player seeking a raid spot; from Cataclysm on also the automatic Raid Finder difficulty
 LFGuild	LF guild	looking for a guild	길드 구함	player wants to be recruited into a guild
 PST		please send tell	귓속말 주세요	ends an advert; means whisper me, not the time zone, unless a clock time stands next to it
@@ -27,7 +27,7 @@ all welcome	all classes welcome	any class may join	직업 무관	recruiting line
 exp only	experienced only, exp req	experienced players only	숙련자만	recruiter wants players who already know the fights
 link gear	link achiev, link achieve, link ach	show your gear or achievement in chat	장비/업적 링크	recruiter asks applicants to prove readiness before an invite
 logs	parses, parse	combat log rankings	로그(딜 순위 기록)	performance records from log sites; "good logs req" asks for proven performers
-carry	carries, carried	being taken through content by stronger players	쩔(버스)	often a paid service; "WTS carry" sells it
+carry	carries, carried	being taken through content by stronger players	버스	often a paid service; 'WTS carry' sells it; an advert that takes people along ('X accepted for carry', 'X welcome for carry') = 'X도 버스 태워 드립니다'; the one who pays for a carry is 버스 손님
 boost	boosts, boosting, boosted	paid power-levelling run	쩔(레벨업 버스)	a high-level player, often a mage, clears a dungeon while low-level customers collect experience
 resets	reset	instance reset	인던 초기화	"5 resets" counts boosting runs; "reset" alone asks the leader to reset the dungeon
 lockout	locked, saved	weekly raid lock	귀속(입장 제한)	"saved" or "locked" means the character already killed bosses there this reset
@@ -43,7 +43,7 @@ cuts	payout	share of the GDKP pot	분배금	each raider's payout at the end of a
 min bid	minbid, min inc, min increment	lowest allowed bid	최소 입찰가	GDKP auction rule quoted in gold
 SR	softres, soft res, soft-res, softreserve	soft reserve	소프트 리저브(사전 예약 주사위)	each raider names one or two wanted items beforehand and only those who named an item roll for it
 HR	hardres, hard res, hard-res, hardreserve	hard reserve	하드 리저브(선점)	the listed item is withheld from rolls and goes to the organiser or a named player
-res	resd, reserved, ress	reserved	예약(선점)	"X res" in a raid advert means item X is not open for rolling
+res	resd, reserved, ress	reserved	선입	"X res" in a raid advert means item X is not open for rolling
 res	rez, ress, rezz, rezzed	resurrect	부활	"res pls" after a death asks a healer to revive the writer
 res	resist, resists, resistance	resistance	저항	after a magic school, e.g. "fire res", it is the defensive stat on gear
 MS	mainspec, main spec	main spec	주특성	loot rule: the role the character plays in this raid
@@ -53,6 +53,7 @@ OS		The Obsidian Sanctum	흑요석 성소	Wrath raid with the dragon Sartharion;
 MS>OS	MS > OS, MS/OS, MSOS	main spec before off spec	주특성 우선	loot rule; a "+1" after it means a player who has won once yields to those who have not
 NBG	need b4 greed, need before greed	need before greed	입찰 우선(필요한 사람 먼저)	loot rule for dungeon groups: roll need only for real upgrades
 greed	all greed	greed roll	차비	the low-priority loot roll; the high-priority one is need = 입찰
+need roll	rolled need, roll need, rolls need, rolling need, needed on, need before greed, need b4 greed, nbg	need roll	입찰	the high-priority loot roll; 'rolled need on X' = 'X에 입찰 굴림'; 'need before greed' = 입찰 우선
 roll	rolls, rolling, /roll	dice roll	주사위	random 1-100 roll that decides who receives an item
 FFA		free for all	자유 획득	loot setting where anyone may pick up; in PvP context an everyone-versus-everyone fight
 ML	masterloot, master loot	master looter	담당자 획득	loot setting where the leader hands out drops
@@ -126,7 +127,7 @@ xmute	transmute, tmute	alchemy transmute	변환	a cooldown-limited alchemy conve
 cd	cds, cooldown, cooldowns	cooldown	재사용 대기시간(쿨기)	in trade talk a profession cooldown; in combat the strong abilities with long reuse timers
 arcanite	arc bar, arcanite bar	Arcanite Bar	아케이나이트 주괴	bar made by an alchemist's transmute, needed for top weapons
 lotus	black lotus	Black Lotus	검은 연꽃	rare herb used for flasks
-lockbox	LB open, lockpick, lockpicking	locked chest service	자물쇠 따기	a rogue opening locked boxes for a tip
+lockbox	LB open, lockpick, lockpicking, lockpicker	locked chest service	자물쇠 따기	a rogue opening locked boxes for a tip; 'anyone have a lockpicker' = '자물쇠 따 주실 도적 계신가요?'
 craft	crafter, crafting	craft an item	제작	"LF crafter" seeks a player who can make something
 pattern	recipe, plans, schematic, formula	profession recipe	도안	the learnable item that teaches a craft
 vendor	vend, vendored	sell to an NPC merchant	상점 판매(상점행)	"vendor trash" is loot only worth selling to an NPC
@@ -135,9 +136,9 @@ RMT		real-money trading	현금 거래	buying gold or items for real money, again
 bot	bots, botter, botting	automated cheating character	봇(오토)	a program-run character; an accusation or a complaint
 scam	scammer, scammed	fraud	사기	warning about a dishonest trader
 # == Roles ==
-tank	tanks, tanking	tank	탱커	the group member who takes the hits and keeps threat - in classic usually a warrior, a bear druid or a protection paladin
-heals	healz, healer, healers	healer	힐러	the role that restores health; "need heals" seeks a healer
-dps	dd, damage dealer	damage dealer	딜러	role; as a number it is damage per second
+tank	tanks, tanking	tank	탱커	the group member who takes the hits and keeps threat - in classic usually a warrior, a bear druid or a protection paladin; before LF or next to LFG it is the writer's own role; after LF, LFM, LF1M or need it is the role a group is missing; with roles on both sides of LF ('2 dps LF tank'), those in front are already in the group and the one behind is wanted
+heals	healz, healer, healers	healer	힐러	the role that restores health; "need heals" seeks a healer; before LF or next to LFG it is the writer's own role; after LF, LFM, LF1M or need it is the role a group is missing; with roles on both sides of LF ('2 dps LF tank'), those in front are already in the group and the one behind is wanted
+dps	dd, damage dealer	damage dealer	딜러	role; as a number it is damage per second; before LF or next to LFG it is the writer's own role; after LF, LFM, LF1M or need it is the role a group is missing; with roles on both sides of LF ('2 dps LF tank'), those in front are already in the group and the one behind is wanted
 rdps	ranged dps, ranged	ranged damage dealer	원거리 딜러	casters and hunters
 mdps	melee dps	melee damage dealer	근접 딜러	warriors, rogues and other close-range classes
 caster	casters	spell caster	캐스터	mage, warlock, priest and other spell users
@@ -220,6 +221,7 @@ ST	single target	single target	단일 대상	in talk of damage or talents: damag
 ST		Stables	마구간	capture point in Arathi Basin calls such as "3 inc ST"
 BRD		Blackrock Depths	검은바위 나락	large level 52-60 dungeon in Blackrock Mountain; runs are named after their goal
 arena run	arena runs, brd arena	Blackrock Depths Ring of Law run	검은바위 나락 투기장 런	repeated short run to the Ring of Law event for its loot, e.g. Savage Gladiator Chain
+anger run	anger runs	Blackrock Depths General Angerforge run	검은바위 나락 앵거포지 런	a short Blackrock Depths run to General Angerforge (사령관 앵거포지), often together with the Ring of Law: 'arena/anger run' = '투기장/앵거포지 런'
 emp run	emp runs, emperor run	Blackrock Depths run to Emperor Thaurissan	검은바위 나락 제왕 런	run to the last boss, often for Ironfoe or Hand of Justice
 lava run	lava runs	Blackrock Depths lava shortcut	검은바위 나락 용암 런	quick route across the lava to the later bosses
 jailbreak	jail break	Jail Break! quest	탈옥! 퀘스트	Blackrock Depths escort quest in the Alliance Onyxia attunement chain
@@ -489,7 +491,7 @@ str		strength	힘	stat
 spi	spr, spirit	spirit	정신력	stat
 int		intellect	지능	stat; in a buff request it means Arcane Intellect
 def	defense, def cap	defense	방어 숙련	tank stat; the "def cap" makes a tank immune to critical hits
-FR	fire res, fire resist	fire resistance	화염 저항	resistance gear asked of tanks for Molten Core, Onyxia and Blackwing Lair
+FR	fire res, fire resist	fire resistance	화염 저항	resistance gear asked of tanks for Molten Core, Onyxia and Blackwing Lair; only next to gear, a boss or a number - a lone lower-case 'fr' in banter is 'for real'
 NR	nature res, nature resist	nature resistance	자연 저항	resistance gear for Ahn'Qiraj, above all Princess Huhuran
 FrR	frost res, frost resist	frost resistance	냉기 저항	resistance gear for Sapphiron
 SR gear	shadow res	shadow resistance	암흑 저항	resistance gear, used on a few Naxxramas and Burning Crusade bosses
@@ -500,7 +502,7 @@ aggro	agro, aggroed	enemy attention	어그로	"I have aggro" means the mob is at
 threat	threat cap	threat	위협 수준	the hidden score that decides whom a mob attacks; "watch threat"
 kite	kiting, kited, kiter	lead an enemy around while staying out of reach	카이팅(끌고 다니기)	assigned to hunters and mages
 adds	add	additional enemies	쫄(추가 몹)	extra mobs that join a boss fight or an accidental pull
-trash	trash mobs	non-boss enemies	잡몹	the packs between bosses; "trash loot" drops from them
+trash	trash mobs	non-boss enemies	잡몹	the packs between bosses; "trash loot" drops from them; said of a player ('trash healer', 'trash guild') it is the plain insult, 형편없는 / 쓰레기, not 잡몹
 pat	pats, patrol	patrolling enemy group	정찰몹(로머)	"wait for pat" before pulling
 mob	mobs	computer-controlled enemy	몹	any hostile NPC
 elite	elites	elite enemy	정예	a stronger mob meant for a group
@@ -555,9 +557,9 @@ BfG		The Battle for Gilneas	길니아스 전투지	Cataclysm battleground with t
 RBG	rbgs, rated bg	rated battleground	평점제 전장	organised rated team battleground from Cataclysm on
 WG		Wintergrasp	겨울손아귀	Wrath outdoor PvP zone with a timed battle
 arena	arenas	arena	투기장	small rated team PvP from Burning Crusade on; in a Blackrock Depths advert it is the Ring of Law event
-2s	2v2, 2's, twos	2v2 arena	투기장 2대2	arena bracket
-3s	3v3, 3's, threes	3v3 arena	투기장 3대3	arena bracket
-5s	5v5, 5's, fives	5v5 arena	투기장 5대5	arena bracket
+2v2	2's, twos	2v2 arena	투기장 2대2	arena bracket; a bare '2s' is not listed here because in classic chat it is nearly always a price (2 silver)
+3v3	3's, threes	3v3 arena	투기장 3대3	arena bracket; a bare '3s' is not listed here because in classic chat it is nearly always a price (3 silver)
+5v5	5's, fives	5v5 arena	투기장 5대5	arena bracket; a bare '5s' is not listed here because in classic chat it is nearly always a price (5 silver)
 rating	cr, mmr, rated	arena or battleground rating	평점	"1800 cr" is a current rating used as a requirement
 FC	flag carrier	flag carrier	깃발 운반자(깃수)	the teammate holding the enemy flag
 EFC	enemy fc	enemy flag carrier	적 깃발 운반자	the opponent holding your flag; "EFC tun" means they are in the tunnel
@@ -616,7 +618,7 @@ HC	H, heroic, heroics, hc run	heroic difficulty	영웅 난이도	the harder dung
 SF	SSF, self found, self-found	Self-Found mode	자급자족 모드	Hardcore option without trading or the auction house
 mak'gora	makgora, mak gora	duel to the death	막고라(죽음의 결투)	Hardcore duel where the loser dies permanently
 F		paying respects	삼가 고인의 명복을(애도)	a lone "F" answers a death, above all on Hardcore realms
-RIP	rip	rest in peace	명복을 빕니다	reaction to a death or a wipe, often joking
+RIP	rip	rest in peace	ㅠㅠ	joking reaction to a death, a wipe or bad luck ("망했네"), not a real condolence
 SoD		Season of Discovery	디스커버리 시즌	seasonal Classic realms with runes and new raids
 era	classic era	Classic Era	클래식 오리지널(클래식 에라)	the permanent vanilla realms
 anni	anniversary, anniv	Anniversary realms	20주년 서버	the fresh Classic realms opened for the 20th anniversary
@@ -681,13 +683,19 @@ rn		right now	지금	time expression
 atm		at the moment	지금은	time expression, not a cash machine
 asap		as soon as possible	최대한 빨리	urgency
 irl		in real life	현실에서	life outside the game
+general chat	gen chat, general channel	the General channel of a zone or city	공개 채팅	channel 1, which a Korean client calls 공개 ('[1. 공개 - 스톰윈드]'): 'in general chat' = '공개 채팅에서'
+trade chat	trade channel	the Trade channel of the cities	거래 채팅	channel 2, which a Korean client calls 거래
+lfg chat	lfg channel	the LookingForGroup channel	파티찾기 채널	the channel a Korean client calls 파티찾기
+fr	frfr, fr fr	for real	진짜로	internet slang at the start or end of a remark ('fr tho', 'ngl fr'); not fire resistance unless gear or a boss is the topic
+no cap	nocap, no kap	no lie	진짜임	internet slang: 'no cap' = 'I am not lying', 'for real'; nothing to do with capturing a base or a level cap
+LGBT	LGBTQ, LGBTQ+, LGBTQIA+	sexual minorities	성소수자	guild and group adverts: 'LGBT friendly' = '성소수자 환영'; 'straights' = 이성애자
 tho		though	그래도	sentence-final contrast
-bc	cuz, cus, b/c	because	왜냐하면	gives a reason
+bc	cuz, cus, b/c	because	~해서	gives a reason, and everything joined to it with 'and' is part of that reason, not a wish or a question of its own ('any tips cuz quests are boring and no dungeon finder?' = '퀘스트는 지루하고 던전 찾기도 없어서 그런데, 팁 있나요?')
 w/		with	~와 함께	"w/ me"
 w/o		without	~ 없이	preposition shorthand
 b4		before	전에	time shorthand, e.g. "need b4 greed"
 m8		mate	친구	British-style address
-bro	bruh, dude, man	friendly address	형씨(친구)	casual address, not a family member
+bro	bruh, dude, man	friendly address		casual filler address, not a family member; Korean chat normally leaves it out
 ppl		people	사람들	plural noun shorthand
 any1	ne1, anyone?	anyone	누구	"any1 for mara?" asks who wants to join
 some1	sm1	someone	누군가	pronoun shorthand
@@ -697,6 +705,7 @@ l2p	learn2play	learn to play	실력이나 키워라	insult
 git gud		get good	실력을 키워라	taunt
 rekt		wrecked	발렸다	badly beaten
 toxic		hostile behaviour	비매너	complaint about a rude player
+touch grass	go touch grass	go outside, you play too much	밖에 좀 나가라	taunt at someone who takes the game too seriously
 salty		bitter	삐짐(짜증)	upset about losing
 troll	trolling, trolled	deliberately disruptive player	트롤(고의 방해)	unless the playable Troll race is clearly meant
 elitist	tryhard, try hard, sweaty	player who takes the game very seriously	빡겜러	usually a complaint
@@ -876,6 +885,7 @@ c		copper	코퍼	directly after a number it is a price in copper
 TP	tower point	Tower Point	거점 보초탑	Horde tower in Alterac Valley, in an Alterac Valley call
 # == Capital cities typed in lower case as often as in capitals ==
 SW		Stormwind City	스톰윈드	Alliance capital; "port to SW" asks a mage for a portal there
+Darn		Darnassus	다르나서스	night elf capital, when travel is the topic ('port to darn', 'boat to darn'); otherwise the mild curse
 UC		Undercity	언더시티	Horde capital of the Forsaken
 # == Russian ==
 ищу	ищем, ищет, ищут	looking for	구함	Russian: a group, a guild or a player is being sought

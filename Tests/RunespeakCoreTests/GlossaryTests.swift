@@ -1161,6 +1161,69 @@ final class GlossaryTests: XCTestCase {
         return GlossaryStore(paths: paths, flavor: flavor)
     }
 
+    /// Group adverts get the rows that say who is looking for whom: the bare Korean "구함" of
+    /// the LF row never reaches the model without the note on word order.
+    func testShippedDataExplainsDirectionOfGroupAdverts() throws {
+        for flavor in [GameFlavor.classic, .retail] {
+            let store = try shippedStore(flavor)
+            for line in ["Dps Lf Stocks", "LF tank SM", "tank lf strat live", "2 dps LF tank SM"] {
+                let senses = store.hints(for: [line]).abbreviations
+                let lf = senses.first { $0.abbr.lowercased() == "lf" }
+                XCTAssertNotNil(lf, "\(flavor) \(line): \(senses.map(\.abbr))")
+                XCTAssertTrue(lf?.note.contains("BEFORE LF is the writer") ?? false, "\(flavor) \(line)")
+                let role = senses.first { ["dps", "tank"].contains($0.abbr.lowercased()) }
+                XCTAssertTrue(role?.note.contains("before LF or next to LFG it is the writer's own role") ?? false,
+                              "\(flavor) \(line): \(senses.map(\.abbr))")
+            }
+            for line in ["healer LFG DM", "lfg stocks"] {
+                let senses = store.hints(for: [line]).abbreviations
+                XCTAssertTrue(senses.first { $0.abbr.lowercased() == "lfg" }?.note.contains("writer's own") ?? false,
+                              "\(flavor) \(line): \(senses.map(\.abbr))")
+            }
+        }
+    }
+
+    /// Words that are both chat slang and game terms: the game sense is offered only where
+    /// the game is the topic. "anger" alone is a feeling (the boss is "anger run" or
+    /// "Angerforge"), and "no cap" is not about capturing anything.
+    func testShippedDataKeepsEverydayWordsOutOfTheGameSenses() throws {
+        let classic = try shippedStore(.classic)
+        for line in ["anger issues much?", "dont anger the tank, he will leave"] {
+            let hints = classic.hints(for: [line])
+            XCTAssertFalse((hints.abbreviations.map(\.korean) + hints.names.map(\.korean)).contains { $0.contains("앵거포지") }, line)
+        }
+        for line in ["LF1M healer for BRD arena/anger run then g2g", "anger runs for HoJ, need tank"] {
+            XCTAssertTrue(classic.hints(for: [line]).abbreviations.contains { $0.korean.contains("앵거포지") }, line)
+        }
+        for flavor in [GameFlavor.classic, .retail] {
+            let store = try shippedStore(flavor)
+            let senses = store.hints(for: ["fr fr no cap that tank was insane"]).abbreviations
+            XCTAssertTrue(senses.contains { $0.abbr == "no cap" && $0.korean == "진짜임" }, "\(flavor): \(senses.map(\.abbr))")
+            XCTAssertFalse(senses.contains { $0.abbr == "cap" }, "\(flavor): the slang takes the word, not the battleground sense")
+            let insult = store.hints(for: ["kys trash healer, worst priest NA"]).abbreviations.first { $0.abbr == "trash" }
+            XCTAssertTrue(insult?.note.contains("insult") ?? false, "\(flavor)")
+        }
+    }
+
+    /// Hints that live checks showed the configured model to need for lines of the kind the
+    /// user reported: the Korean client's own names of the numbered channels, an advert that
+    /// takes people along "for carry", and a reason that goes on behind "and".
+    func testShippedDataNamesChannelsAndWordsAdvertsAsKoreanPlayersDo() throws {
+        for flavor in [GameFlavor.classic, .retail] {
+            let store = try shippedStore(flavor)
+            let general = store.hints(for: ["farts in general chat"]).abbreviations
+            XCTAssertTrue(general.contains { $0.abbr == "general chat" && $0.korean == "공개 채팅" }, "\(flavor): \(general.map(\.abbr))")
+            let trade = store.hints(for: ["trade chat is wild today lol"]).abbreviations
+            XCTAssertTrue(trade.contains { $0.abbr == "trade chat" && $0.korean == "거래 채팅" }, "\(flavor): \(trade.map(\.abbr))")
+            let carry = store.hints(for: ["LGBT friendly and straights accepted for carry"]).abbreviations
+            XCTAssertTrue(carry.contains { $0.korean == "버스" && $0.note.contains("버스 태워 드립니다") }, "\(flavor): \(carry.map(\.abbr))")
+            // "general" by itself is an ordinary word and names no channel.
+            XCTAssertFalse(store.hints(for: ["in general the tank should pull first"]).abbreviations.contains { $0.abbr == "general chat" }, "\(flavor)")
+        }
+        let reason = try shippedStore(.classic).hints(for: ["any advice cuz they too grindy and no random queues?"]).abbreviations
+        XCTAssertTrue(reason.contains { $0.abbr == "bc" && $0.note.contains("part of that reason") }, "\(reason.map(\.abbr))")
+    }
+
     /// Chat lines that once drew wrong hints from the shipped files (found with --dictionary-check).
     func testShippedDataGivesNoHintsForOrdinaryLines() throws {
         let quiet = [

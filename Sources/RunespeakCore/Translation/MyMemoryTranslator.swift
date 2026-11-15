@@ -59,8 +59,12 @@ public final class MyMemoryTranslator: Translating, @unchecked Sendable {
                 running += 1
                 group.addTask { [self] in
                     do {
-                        let source = Self.detectLanguage(message.body, excluding: target, fallback: "en")
-                        return (message.id, .success(try await translate(message.body, from: source, to: target)))
+                        // A typed "/me ..." is prose; the command in front would come back as it is.
+                        let action = TranslationPrompt.typedEmote(message.body)
+                        let body = action ?? message.body
+                        let source = Self.detectLanguage(body, excluding: target, fallback: "en")
+                        let text = try await translate(body, from: source, to: target)
+                        return (message.id, .success(action == nil ? text : TranslationPrompt.emoteTranslation(text, reader: context.reader)))
                     } catch let error as TranslationError {
                         return (message.id, .failure(error))
                     } catch {

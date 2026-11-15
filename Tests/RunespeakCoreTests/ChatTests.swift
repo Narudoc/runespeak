@@ -131,10 +131,14 @@ private final class ChatSim {
 
 private final class Run {
     let tracker: ChatTracker
+    /// The messages as the app lists them: a message that stands in for earlier ones (see
+    /// `ChatTracker.corrections`) has taken the place of the first of them.
     var emitted: [ChatMessage] = []
     var clock = Date(timeIntervalSince1970: 1_700_000_000)
     /// Number of the ingest (1-based) in which each message came out.
     var emittedAt: [Int] = []
+    /// Everything the tracker handed out, in order, with the ingest it came out in.
+    var everything: [(message: ChatMessage, frame: Int)] = []
     var frames = 0
 
     init(locale: ClientLocale = .enUS) { tracker = ChatTracker(clientLocale: locale) }
@@ -144,8 +148,22 @@ private final class Run {
         clock += 0.7
         frames += 1
         let out = tracker.ingest(frame, now: clock)
-        emitted += out
-        emittedAt += out.map { _ in frames }
+        let corrections = tracker.corrections
+        for message in out {
+            everything.append((message, frames))
+            let places = (corrections[message.id] ?? []).compactMap { id in emitted.firstIndex { $0.id == id } }.sorted()
+            guard let first = places.first else {
+                emitted.append(message)
+                emittedAt.append(frames)
+                continue
+            }
+            emitted[first] = message
+            emittedAt[first] = frames
+            for index in places.dropFirst().reversed() {
+                emitted.remove(at: index)
+                emittedAt.remove(at: index)
+            }
+        }
         return out
     }
 
@@ -184,6 +202,354 @@ private func assertSame(_ got: [String], _ want: [String], _ note: String = "", 
     func at(_ a: [String], _ k: Int) -> String { k < a.count ? "\"\(a[k])\"" : "<end>" }
     XCTFail("\(note) emitted \(got.count), expected \(want.count); first difference at #\(i): got \(at(got, i)), then \(at(got, i + 1)); expected \(at(want, i)), then \(at(want, i + 1))",
             file: file, line: line)
+}
+
+// MARK: - Real window layout
+
+/// Hand-placed OCR frames with the proportions of the real game window on a Retina display:
+/// rows 42 px apart, header rows starting at x = 78, wrapped rows 18 px to their right (about
+/// 0.44 line heights), chat text ending near x = 870 in a region 960 px wide.
+private enum Layout {
+    static let size = CGSize(width: 960, height: 520)
+    static let headerX: CGFloat = 78
+    static let wrappedX: CGFloat = 96
+    static let pitch: CGFloat = 42
+
+    static let nameplate = RGBColor(r: 0.04, g: 0.92, b: 0.04)
+    static let tabGold = RGBColor(r: 1, g: 0.82, b: 0)
+    static let className = RGBColor(r: 0.31, g: 0.77, b: 0.89)
+    static let npcSay = RGBColor(r: 1, g: 1, b: 0.62)
+
+    /// `row` counts from the top of the region; `x` nil puts the line on the header column
+    /// when it starts with "[" and on the column of wrapped rows otherwise.
+    static func line(_ row: Int, _ text: String, _ color: RGBColor = Palette.channel, x: CGFloat? = nil,
+                     width: CGFloat? = nil, height: CGFloat = 40, confidence: Double = 1) -> OCRLine {
+        let left = x ?? (text.hasPrefix("[") ? headerX : wrappedX)
+        let w = width ?? min(CGFloat(TextFold.columns(text)) * 17, 870 - left)
+        return OCRLine(text: text, box: CGRect(x: left, y: 20 + CGFloat(row) * pitch, width: w, height: height),
+                       color: color, confidence: confidence)
+    }
+
+    static func frame(_ lines: [OCRLine]) -> OCRFrame { OCRFrame(lines: lines, imageSize: size) }
+
+    static let advert = [
+        "<The Example Guild> and we rule! Recruiting",
+        "all for Leveling, Dungeoning, WPvP, and",
+        "Raiding. We are currently building our 20 man",
+        "Roster for December raids. Shoot us a message",
+        "for an invite!",
+    ]
+    static let advertBody = "We're " + advert.joined(separator: " ")
+}
+
+final class ChatTrackerLayoutTests: XCTestCase {
+
+    private func settle(_ run: Run, _ frame: OCRFrame, frames: Int = 4) {
+        for _ in 0..<frames { run.feed(frame) }
+    }
+
+    /// Two settled chat lines, so the tracker knows the layout before the scene starts.
+    private func preamble(from row: Int) -> [OCRLine] {
+        [Layout.line(row, "[1. 공개 - 도시] [Hexbloom]: anyone selling linen cloth"),
+         Layout.line(row + 1, "[1. 공개 - 도시] [Quillon]: lf enchanter pst")]
+    }
+
+    /// The report from the game: the header row carries only "We're" behind a class-coloured
+    /// name, so its sampled colour is the name's, not the channel's. The five wrapped rows
+    /// below must still belong to it, and the tab labels that fade in above must not be chat.
+    func testWrappedMessageUnderClassColouredHeaderIsOneMessage() {
+        let run = Run(locale: .koKR)
+        settle(run, Layout.frame(preamble(from: 9)))
+        // The message arrives (the window scrolls up by six rows) while the tab labels show.
+        var lines = [Layout.line(0, "일반", Layout.tabGold, x: 102, width: 44, height: 26),
+                     Layout.line(0, "Trade", Layout.tabGold, x: 340, width: 72, height: 22)]
+        lines += preamble(from: 3)
+        lines.append(Layout.line(5, "[1. 공개 - 도시] [Brann Oakheart]: We're", Layout.className))
+        lines += Layout.advert.enumerated().map { Layout.line(6 + $0.offset, $0.element) }
+        settle(run, Layout.frame(lines), frames: 2)
+        // The mouse moves away: the tab labels are gone, the chat stays.
+        settle(run, Layout.frame(Array(lines.dropFirst(2))))
+
+        XCTAssertEqual(run.emitted.count, 3, "\(run.texts)")
+        let advert = run.emitted.last
+        XCTAssertEqual(advert?.channel, .publicChannel)
+        XCTAssertEqual(advert?.sender, "Brann Oakheart")
+        XCTAssertEqual(advert?.body, Layout.advertBody)
+        XCTAssertFalse(run.texts.contains { $0.contains("일반") || $0.contains("Trade") }, "\(run.texts)")
+    }
+
+    /// A tab label fading in alone above settled chat is not a message either, and does not
+    /// disturb the message that arrives while it shows.
+    func testLoneTabLabelAboveTheChatIsNotChat() {
+        let run = Run(locale: .koKR)
+        settle(run, Layout.frame(preamble(from: 9)))
+        let tab = Layout.line(0, "일반", Layout.tabGold, x: 102, width: 44, height: 26)
+        settle(run, Layout.frame([tab] + preamble(from: 9)))
+        var lines = [tab] + preamble(from: 7)
+        lines.append(Layout.line(9, "[1. 공개 - 도시] [Tamsin Alder]: Dps Lf", RGBColor(r: 0.69, g: 0.82, b: 0.5)))
+        lines.append(Layout.line(10, "Stocks"))
+        settle(run, Layout.frame(lines))
+        settle(run, Layout.frame(Array(lines.dropFirst())))
+
+        XCTAssertEqual(run.emitted.map(\.body), ["anyone selling linen cloth", "lf enchanter pst", "Dps Lf Stocks"])
+        XCTAssertEqual(run.emitted.last?.sender, "Tamsin Alder")
+    }
+
+    /// Names floating over characters behind the window: read as separate boxes far to the
+    /// right of the chat rows they share a baseline with, or alone on a row. None of it is
+    /// chat, and the room it seems to leave at the end of every row must not split messages.
+    func testWorldTextBehindTheWindowIsIgnored() {
+        let run = Run(locale: .koKR)
+        let plate = [Layout.line(1, "가나다 라마", Layout.nameplate, x: 775, width: 184, height: 45, confidence: 0.3),
+                     Layout.line(2, "<빵 장수>", Layout.nameplate, x: 790, width: 168, height: 45)]
+        var lines = preamble(from: 0) + plate
+        settle(run, Layout.frame(lines))
+        // More text of the world, where no chat row is.
+        let strays = [Layout.line(3, "의 하수인>", Layout.nameplate, x: 500, width: 150),
+                      Layout.line(4, "wn Example Club>", Layout.nameplate, x: 640, width: 260)]
+        settle(run, Layout.frame(lines + strays))
+
+        // A notice, an NPC, an emote and a wrapped advert arrive below, each with a name of
+        // the world on the same row.
+        lines = preamble(from: 0)
+        lines.append(Layout.line(2, "규칙을 지키며 즐겁게 플레이하시기 바랍니다.", Palette.system, x: Layout.headerX))
+        lines.append(Layout.line(2, "가나다 라마", Layout.nameplate, x: 775, width: 184, height: 45))
+        lines.append(Layout.line(3, "토박이 상인의 말: 신선한 빵 팔아요!", Layout.npcSay, x: Layout.headerX, width: 520))
+        lines.append(Layout.line(3, "Mossy Example", Layout.nameplate, x: 700, width: 230))
+        lines.append(Layout.line(4, "Hexbloom님이 손을 흔듭니다.", Palette.emote, x: Layout.headerX))
+        lines.append(Layout.line(5, "[1. 공개 - 도시] [Brann Oakheart]: We're", width: 560))
+        lines.append(Layout.line(5, "<빵 장수>", Layout.nameplate, x: 780, width: 178, height: 45))
+        lines += Layout.advert.enumerated().map { Layout.line(6 + $0.offset, $0.element) }
+        settle(run, Layout.frame(lines))
+
+        XCTAssertEqual(run.emitted.map(\.body), [
+            "anyone selling linen cloth", "lf enchanter pst",
+            "규칙을 지키며 즐겁게 플레이하시기 바랍니다.", "신선한 빵 팔아요!", "Hexbloom님이 손을 흔듭니다.",
+            Layout.advertBody,
+        ])
+        XCTAssertEqual(run.emitted.map(\.channel), [.publicChannel, .publicChannel, .system, .say, .emote, .publicChannel])
+        XCTAssertEqual(run.emitted[3].sender, "토박이 상인")
+    }
+
+    /// The end of the header row was read badly (text of the world over it, closing bracket
+    /// taken for a letter) and with little confidence: still one message, under the full name.
+    func testPollutedHeaderRowKeepsItsWrappedRows() {
+        let run = Run(locale: .koKR)
+        settle(run, Layout.frame(preamble(from: 9)))
+        var lines = preamble(from: 3)
+        lines.append(Layout.line(5, "[1. 공개 - 도시] [Brann Oakheartl: Wet", Layout.nameplate, width: 800, confidence: 0.5))
+        lines += Layout.advert.enumerated().map { Layout.line(6 + $0.offset, $0.element) }
+        settle(run, Layout.frame(lines), frames: 8)
+
+        XCTAssertEqual(run.emitted.count, 3, "\(run.texts)")
+        XCTAssertEqual(run.emitted.last?.sender, "Brann Oakheart")
+        XCTAssertEqual(run.emitted.last?.body, "Wet " + Layout.advert.joined(separator: " "))
+    }
+
+    /// Wrapped rows are told by where they start, so a system line on the message column right
+    /// under a chat line stays a line of its own, and two notices in a row stay two.
+    func testHeaderlessLinesOnTheMessageColumnStartMessages() {
+        let run = Run(locale: .koKR)
+        var lines = preamble(from: 0)
+        lines.append(Layout.line(2, "[1. 공개 - 도시] [Brann Oakheart]: We're"))
+        lines += Layout.advert.prefix(2).enumerated().map { Layout.line(3 + $0.offset, $0.element) }
+        lines.append(Layout.line(5, "경험치 250을 획득했습니다.", Palette.system, x: Layout.headerX))
+        lines.append(Layout.line(6, "전리품을 획득했습니다: 10골드", Palette.system, x: Layout.headerX))
+        lines.append(Layout.line(7, "자세한 내용은 고객 지원 페이지에서 확인하시기", Palette.system, x: Layout.headerX))
+        lines.append(Layout.line(8, "바랍니다.", Palette.system))
+        settle(run, Layout.frame(lines))
+
+        XCTAssertEqual(Array(run.emitted.map(\.body).dropFirst(2)), [
+            "We're " + Layout.advert.prefix(2).joined(separator: " "),
+            "경험치 250을 획득했습니다.", "전리품을 획득했습니다: 10골드",
+            "자세한 내용은 고객 지원 페이지에서 확인하시기 바랍니다.",
+        ])
+    }
+
+    /// Cold start: a one-row message that fills its row, then a notice in another colour on
+    /// the message column. Nothing is known about the wrap indent yet; the colour of a header
+    /// row with a whole sentence behind it is the message's, so the notice is its own line.
+    func testColouredNoticeUnderAFullHeaderRowIsItsOwnLine() {
+        let bnet = RGBColor(r: 0.51, g: 0.77, b: 1)
+        for notice in [bnet, Palette.guild] {
+            let run = Run(locale: .koKR)
+            let lines = [Layout.line(8, "[1. 공개 - 도시] [Hexbloom]: selling linen cloth and wool cloth cheap", width: 792),
+                         Layout.line(9, "Example#1234 (Vexa) 님이 접속했습니다.", notice, x: Layout.headerX)]
+            settle(run, Layout.frame(lines))
+            settle(run, Layout.frame([]), frames: 1)
+            XCTAssertEqual(run.emitted.first?.body, "selling linen cloth and wool cloth cheap", "\(run.texts)")
+            XCTAssertEqual(run.emitted.first?.sender, "Hexbloom")
+            XCTAssertEqual(run.emitted.count, 2, "\(run.texts)")
+        }
+    }
+
+    /// System lines under short chat lines are not wrapped rows: they must not teach the
+    /// tracker that this window does not indent, which would switch the indent rules off.
+    func testSystemLinesUnderChatLinesDoNotHideTheIndent() {
+        let run = Run(locale: .koKR)
+        var lines: [OCRLine] = []
+        for (n, name) in ["Hexbloom", "Quillon", "Odalys", "Vexa"].enumerated() {
+            lines.append(Layout.line(2 * n, "[1. 공개 - 도시] [\(name)]: hi"))
+            lines.append(Layout.line(2 * n + 1, "\(name)님이 접속했습니다.", Palette.system, x: Layout.headerX))
+        }
+        settle(run, Layout.frame(lines), frames: 6)
+        XCTAssertEqual(run.emitted.count, 8, "\(run.texts)")
+
+        // The window scrolls by six rows: a wrapped advert under a class-coloured header.
+        var next = Array(lines.dropFirst(6)).map { l -> OCRLine in
+            var m = l; m.box = m.box.offsetBy(dx: 0, dy: -6 * Layout.pitch); return m
+        }
+        next.append(Layout.line(2, "[1. 공개 - 도시] [Tamsin]: We're", Layout.className))
+        next += Layout.advert.enumerated().map { Layout.line(3 + $0.offset, $0.element) }
+        settle(run, Layout.frame(next))
+        XCTAssertEqual(run.emitted.count, 9, "\(run.texts)")
+        XCTAssertEqual(run.emitted.last?.sender, "Tamsin")
+        XCTAssertEqual(run.emitted.last?.body, Layout.advertBody)
+    }
+
+    /// A wrapped row whose box starts well right of the wrap column (a leading icon OCR did
+    /// not read, a lost first character) is still a row of its message.
+    func testWrappedRowStartingLateIsKept() {
+        for offset in [0.6, 0.8, 1.0, 1.3] as [CGFloat] {
+            let run = Run(locale: .koKR)
+            settle(run, Layout.frame(preamble(from: 9)))
+            var lines = preamble(from: 6)
+            lines.append(Layout.line(8, "[1. 공개 - 도시] [Odalys]: LFM for the raid tonight we need", width: 792))
+            lines.append(Layout.line(9, "two healers and one tank, summons are up at", x: Layout.wrappedX + offset * 40, width: 700))
+            lines.append(Layout.line(10, "the stone, whisper for an invite"))
+            settle(run, Layout.frame(lines))
+            XCTAssertEqual(run.emitted.last?.body,
+                           "LFM for the raid tonight we need two healers and one tank, summons are up at the stone, whisper for an invite",
+                           "offset \(offset): \(run.texts)")
+        }
+    }
+
+    /// Cold start with only a notice in the chat and the name over a character behind the
+    /// window: no header row has shown where chat starts, and the name is still not chat.
+    func testWorldTextBeforeAnyHeaderRowIsNotChat() {
+        let plate = [Layout.line(5, "가나다 라마", Layout.nameplate, x: 775, width: 184, height: 45),
+                     Layout.line(6, "<빵 장수>", Layout.nameplate, x: 790, width: 168, height: 45)]
+        let notice = [Layout.line(9, "example.com/article/12345에서 게임 내", RGBColor(r: 0.09, g: 0.64, b: 0.92)),
+                      Layout.line(10, "행동 규범을 참조하시길 바랍니다.", Palette.system)]
+        let scenes: [[OCRLine]] = [plate + notice, [plate[0], notice[1]], plate, [plate[0]]]
+        for (n, scene) in scenes.enumerated() {
+            let run = Run(locale: .koKR)
+            settle(run, Layout.frame(scene), frames: 6)
+            settle(run, Layout.frame([]), frames: 2)
+            XCTAssertFalse(run.texts.contains { $0.contains("가나다") || $0.contains("장수") }, "scene \(n): \(run.texts)")
+            if n < 2 { XCTAssertTrue(run.texts.contains { $0.contains("행동 규범") }, "scene \(n): \(run.texts)") }
+        }
+    }
+
+    /// Text of the world half a row off a header row garbles the name group for a few frames
+    /// (both brackets read as letters). That is the same row read badly, not a new message.
+    func testGarbledRereadOfAHeaderRowIsNotANewMessage() {
+        for garbled in ["[1. 공개 - 도시] lamsin Alderl: Dps Lf", "[1. 공개 - 도시] amsin Alderl: DpS Lf",
+                        "[1. 공개 - 도시] Damsin Alderj: Dps Lf"] {
+            let run = Run(locale: .koKR)
+            var lines = preamble(from: 7)
+            lines.append(Layout.line(9, "[1. 공개 - 도시] [Tamsin Alder]: Dps Lf"))
+            lines.append(Layout.line(10, "Stocks"))
+            settle(run, Layout.frame(lines))
+            var variant = lines
+            variant[2] = Layout.line(9, garbled, confidence: 0.5)
+            settle(run, Layout.frame(variant))
+            settle(run, Layout.frame(lines), frames: 3)
+            settle(run, Layout.frame([]), frames: 2)
+            XCTAssertEqual(run.emitted.map(\.body), ["anyone selling linen cloth", "lf enchanter pst", "Dps Lf Stocks"], garbled)
+            XCTAssertEqual(run.emitted.last?.sender, "Tamsin Alder", garbled)
+        }
+    }
+
+    /// Rows as the recogniser delivers them for a chat window with its buttons at the left
+    /// edge of the captured region: (text, colour, x, y, width, height).
+    private func window(_ rows: [(String, RGBColor, CGFloat, CGFloat, CGFloat, CGFloat)]) -> OCRFrame {
+        OCRFrame(lines: rows.map { OCRLine(text: $0.0, box: CGRect(x: $0.2, y: $0.3, width: $0.4, height: $0.5), color: $0.1, confidence: 1) },
+                 imageSize: CGSize(width: 872, height: 546))
+    }
+
+    /// The report from a real capture: the box of one header row took in a piece of the
+    /// button beside the window, so it starts 30 px left of the other header rows and is half
+    /// a row taller. That one row must not be taken for the step by which the window indents
+    /// its wrapped rows: with a step that large no wrapped row would count as indented, and
+    /// every message would fall apart into its rows.
+    func testHeaderRowWhoseBoxTookInAButtonDoesNotHideTheIndent() {
+        let orange = Palette.emote, pink = Palette.channel
+        let frame = window([
+            ("Pella Fernwhistle가 신나게 춤을 춥니다.", orange, 25, 54, 600, 40),
+            ("[1. 공개 - 도시] [Brann Oakheart]: any", pink, -1, 89, 729, 58),
+            ("tips for leveling a warrior without dying so", pink, 44, 142, 764, 34),
+            ("much in these caves please?", pink, 44, 180, 518, 39),
+            ("Tall Birch이 Garrick Stone에게 감사해 합니", orange, 25, 221, 785, 40),
+            ("다.", orange, 44, 264, 44, 36),
+            ("Dolmer Pike가 Garrick Stone에게 감사해 합니", orange, 30, 306, 760, 36),
+            ("다.", orange, 44, 348, 44, 36),
+            ("토박이 상인의 말: 말이 나왔으니 말인데, 저분이 바로 그분이에요. 믿음직하고", Layout.npcSay, 28, 388, 780, 42),
+            ("용감한 분이죠. 이름은 모르겠네요.", Layout.npcSay, 44, 430, 440, 38),
+        ])
+        let run = Run(locale: .koKR)
+        settle(run, frame, frames: 6)
+        XCTAssertEqual(run.emitted.map(\.body), [
+            "Pella Fernwhistle가 신나게 춤을 춥니다.",
+            "any tips for leveling a warrior without dying so much in these caves please?",
+            "Tall Birch이 Garrick Stone에게 감사해 합니 다.",
+            "Dolmer Pike가 Garrick Stone에게 감사해 합니 다.",
+            "말이 나왔으니 말인데, 저분이 바로 그분이에요. 믿음직하고 용감한 분이죠. 이름은 모르겠네요.",
+        ])
+        XCTAssertEqual(run.emitted.map(\.channel), [.emote, .publicChannel, .emote, .emote, .say])
+        XCTAssertEqual(run.emitted[1].sender, "Brann Oakheart")
+    }
+
+    /// A button beside the window read as the first glyph of a row: the box starts at the
+    /// edge of the region, far left of the message column, and is a little taller. The row is
+    /// chat all the same, without that glyph.
+    func testRowBehindAGlyphOfTheButtonColumnIsKept() {
+        let orange = Palette.emote, pink = Palette.channel
+        for glyph in [")", "d", "•)"] {
+            let frame = window([
+                ("\(glyph) Pella Fernwhistle가 신나게 춤을 춥니다.", orange, 0, 76, 644, 48),
+                ("[1. 공개 - 도시] [Brann Oakheart]: any", pink, 48, 115, 700, 39),
+                ("tips for leveling a warrior without dying so", pink, 64, 160, 766, 38),
+                ("much in these caves please?", pink, 64, 202, 516, 37),
+                ("Tall Birch이 Garrick Stone에게 감사해 합니", orange, 48, 240, 780, 41),
+                ("다.", orange, 64, 284, 44, 36),
+                ("토박이 상인의 말: 신선한 빵 팔아요!", Layout.npcSay, 48, 326, 520, 42),
+            ])
+            let run = Run(locale: .koKR)
+            settle(run, frame, frames: 6)
+            XCTAssertEqual(run.emitted.map(\.body), [
+                "Pella Fernwhistle가 신나게 춤을 춥니다.",
+                "any tips for leveling a warrior without dying so much in these caves please?",
+                "Tall Birch이 Garrick Stone에게 감사해 합니 다.",
+                "신선한 빵 팔아요!",
+            ], glyph)
+            XCTAssertEqual(run.emitted.first?.sender, "Pella Fernwhistle", glyph)
+        }
+        // Text that starts left of the chat and does not reach into its columns is still not chat.
+        let stray = window([
+            ("A Mossy Example", Layout.nameplate, 0, 76, 30, 40),
+            ("[1. 공개 - 도시] [Brann Oakheart]: any tips for leveling", pink, 248, 115, 500, 39),
+            ("[1. 공개 - 도시] [Hexbloom]: anyone selling linen cloth", pink, 248, 157, 500, 39),
+        ])
+        let run = Run(locale: .koKR)
+        settle(run, stray, frames: 6)
+        XCTAssertEqual(run.emitted.map(\.sender), ["Brann Oakheart", "Hexbloom"], "\(run.texts)")
+    }
+
+    /// Cold start on a header row OCR read with little confidence (text of the world over its
+    /// end), with a name of the world alone on another row: the recognised channel tag still
+    /// tells where messages start, so the wrapped rows stay with their message.
+    func testDoubtfulHeaderRowStillAnchorsItsWrappedRows() {
+        let run = Run(locale: .koKR)
+        var lines = [Layout.line(1, "가나다 라마", Layout.nameplate, x: 775, width: 184, height: 45)]
+        lines.append(Layout.line(2, "[1. 공개 - 도시] [Brann Oakheartl: Wet", Layout.nameplate, width: 800, confidence: 0.3))
+        lines += Layout.advert.enumerated().map { Layout.line(3 + $0.offset, $0.element) }
+        settle(run, Layout.frame(lines), frames: 8)
+        settle(run, Layout.frame([]), frames: 2)
+        XCTAssertEqual(run.emitted.count, 1, "\(run.texts)")
+        XCTAssertEqual(run.emitted.first?.sender, "Brann Oakheart")
+        XCTAssertEqual(run.emitted.first?.body, "Wet " + Layout.advert.joined(separator: " "))
+    }
 }
 
 // MARK: - Tracker tests
@@ -1076,6 +1442,66 @@ final class ChatLineParserTests: XCTestCase {
         ], locale: .koKR)
     }
 
+    /// Names with a space (the report: "[1. 공개 - 스톰윈드] [First Last]: ...").
+    func testNamesWithSpaces() {
+        check([
+            Case("[1. 공개 - 도시] [Brann Oakheart]: Dps Lf", .publicChannel, "1. 공개 - 도시", "Brann Oakheart", "Dps Lf"),
+            Case("[길드] [Brann Oakheart]: hello", .guild, "길드", "Brann Oakheart", "hello"),
+            Case("[파티] [Brann Oakheart]: omw", .party, "파티", "Brann Oakheart", "omw"),
+            Case("[4. 파티찾기] [Brann of Oakheart]: LFG", .publicChannel, "4. 파티찾기", "Brann of Oakheart", "LFG"),
+            Case("[Brann Oakheart]: hello", .say, nil, "Brann Oakheart", "hello"),
+            Case("[Brann Oakheart]의 말: hello", .say, nil, "Brann Oakheart", "hello"),
+            Case("[Brann Oakheart]의 귓속말: hello", .whisper, nil, "Brann Oakheart", "hello"),
+            // The closing bracket read as a thin letter, or lost.
+            Case("[1. 공개 - 도시] [Brann Oakheartl: We're", .publicChannel, "1. 공개 - 도시", "Brann Oakheart", "We're"),
+            Case("[1. 공개 - 도시] [Brann Oakheartj: We're", .publicChannel, "1. 공개 - 도시", "Brann Oakheart", "We're"),
+            Case("[1. 공개 - 도시] [Brann Oakheart: We're", .publicChannel, "1. 공개 - 도시", "Brann Oakheart", "We're"),
+            Case("[1. 공개 - 도시] [Brann Oakheart] We're back", .publicChannel, "1. 공개 - 도시", "Brann Oakheart", "We're back"),
+        ], locale: .koKR)
+        check([
+            Case("[1. General - Stormwind City] [Brann Oakheart]: Dps Lf", .publicChannel, "1. General - Stormwind City", "Brann Oakheart", "Dps Lf"),
+            Case("[Guild] [Brann Oakheart]: hello", .guild, "Guild", "Brann Oakheart", "hello"),
+            Case("[Brann Oakheart] says: hello", .say, nil, "Brann Oakheart", "hello"),
+        ], locale: .enUS)
+        // A sentence in brackets is not a name, and a tag never swallows a second group.
+        let p = ChatLineParser.parse("[1. 공개 - 도시] [selling this and that today]: pst", locale: .koKR)
+        XCTAssertNotEqual(p.channelLabel, "1. 공개 - 도시] [selling this and that")
+        for text in ["[1. 공개 - 도시] [Brann Oakheart]: x", "[Guild] [Brann Oakheart]: x"] {
+            let label = ChatLineParser.parse(text, locale: .koKR).channelLabel ?? ""
+            XCTAssertFalse(label.contains("]") || label.contains("["), text)
+        }
+    }
+
+    /// Retail's "Trade (Services)": parentheses inside a channel tag belong to its label.
+    func testChannelTagsWithParentheses() {
+        check([
+            Case("[2. Trade (Services) - City] [Hexbloom-Realm]: WTS mythic boost cheap", .publicChannel,
+                 "2. Trade (Services) - City", "Hexbloom", "WTS mythic boost cheap"),
+            Case("[2. Trade (Services) - City] [Brann Oakheart]: WTS boost", .publicChannel,
+                 "2. Trade (Services) - City", "Brann Oakheart", "WTS boost"),
+        ], locale: .enUS)
+        check([
+            Case("[2. 거래 (서비스) - 도시] [Hexbloom]: 쐐기 버스 팝니다", .publicChannel, "2. 거래 (서비스) - 도시", "Hexbloom", "쐐기 버스 팝니다"),
+            Case("[2. 거래 (서비스) - 도시] [Brann Oakheartl: WTS boost", .publicChannel, "2. 거래 (서비스) - 도시", "Brann Oakheart", "WTS boost"),
+        ], locale: .koKR)
+    }
+
+    /// Header rows with text of the world over them: the tag's opening bracket read as a
+    /// digit, or both brackets of a two-word name read as letters.
+    func testDamagedHeadersWithSpacedNames() {
+        check([
+            Case("11. 공개 - 도시] [Brann Oakheartl: we back", .publicChannel, "11. 공개 - 도시", "Brann Oakheart", "we back"),
+            Case("[1. 공개 - 도시] Dade Oakheartj: Dps Lf", .publicChannel, "1. 공개 - 도시", "Dade Oakheart", "Dps Lf"),
+            Case("[길드] Brann Oakheartl: hello there", .guild, "길드", "Brann Oakheart", "hello there"),
+        ], locale: .koKR)
+        // Words that are not a name are not taken for one.
+        for text in ["[2. 거래 - 도시] WTS Linen Clothl: 5s", "[1. 공개 - 도시] lade Oakheartl: Dps Lf",
+                     "[1. 공개 - 도시] Brann Oakheart: Dps Lf", "Brann Oakheartl: Dps Lf"] {
+            let p = ChatLineParser.parse(text, locale: .koKR)
+            XCTAssertFalse(p.sender?.contains(" ") ?? false, "\(text) → \(p.sender ?? "nil")")
+        }
+    }
+
     func testTimestamps() {
         for (text, stamp) in [("[21:04] [Guild] [Thrall]: hi", "21:04"), ("[21:04:33] [Guild] [Thrall]: hi", "21:04:33"),
                               ("21:04:33 [Guild] [Thrall]: hi", "21:04:33"), ("21:04 [Guild] [Thrall]: hi", "21:04"),
@@ -1147,7 +1573,7 @@ final class ChatLineParserTests: XCTestCase {
             Case("[일드] [Thrall]: need 1 more dps", .guild, "길드", "Thrall", "need 1 more dps"),
             Case("[파트] [Anduin]: omw", .party, "파티", "Anduin", "omw"),
             Case("[길드] tPedroj: Laguien para mazmorras?", .guild, "길드", "Pedro", "Laguien para mazmorras?"),
-            Case("[길드] [Pedrol: Lalguien para", .guild, "길드", "Pedrol", "Lalguien para"),
+            Case("[길드] [Pedrol: Lalguien para", .guild, "길드", "Pedro", "Lalguien para"),
             Case("[길드]「小明」有人一起打副本吗", .guild, "길드", "小明", "有人一起打副本吗"),
             Case("[. 일반] [Joao]: alguem pode", .publicChannel, ". 일반", "Joao", "alguem pode"),
             Case("[Varian]님의 치속말: can u tank", .whisper, nil, "Varian", "can u tank"),
@@ -1244,6 +1670,19 @@ final class LineSimilarityTests: XCTestCase {
         XCTAssertTrue(LineSimilarity.compare(key("and the rest of the wrapped line"), key("and the rest of the wrapped Iine")).isStrict)
     }
 
+    /// A header row whose name group lost both brackets parses without a sender, the name
+    /// becoming part of the body. It is still the same row.
+    func testHeaderWithLostNameGroupIsTheSameLine() {
+        func ko(_ text: String) -> LineKey { LineKey(text: text, parsed: ChatLineParser.parse(text, locale: .koKR)) }
+        let clean = ko("[1. 공개 - 도시] [Tamsin Alder]: Dps Lf")
+        for garbled in ["[1. 공개 - 도시] lamsin Alderl: Dps Lf", "[1. 공개 - 도시] amsin Alderl: DpS Lf"] {
+            XCTAssertNil(ChatLineParser.parse(garbled, locale: .koKR).sender, garbled)
+            XCTAssertNotEqual(LineSimilarity.compare(ko(garbled), clean), .none, garbled)
+        }
+        XCTAssertEqual(LineSimilarity.compare(ko("[1. 공개 - 도시] lamsin Alderl: Dps Lf"),
+                                              ko("[1. 공개 - 도시] [Quillon]: lf enchanter pst")), .none)
+    }
+
     func testDifferentLines() {
         XCTAssertEqual(LineSimilarity.compare(key("[Party] [Ann]: ok"), key("[Party] [Bob]: ok")), .none)
         XCTAssertEqual(LineSimilarity.compare(key("[Party] [Thrall]: gg"), key("[Party] [Thrall]: go")), .none)
@@ -1293,6 +1732,1071 @@ final class LanguageGateTests: XCTestCase {
                      "[Thunderfury, Blessed Blade of the Windseeker]", "[우레폭풍 - 바람추적자의 성검]", "WTS [Arcanite Bar]",
                      ":D", "ㅋ", "¯\\_(ツ)_/¯"] {
             XCTAssertFalse(LanguageGate.needsTranslation(text, reader: .english), text)
+        }
+    }
+}
+
+// MARK: - Text of the world over chat rows (names over characters behind the window)
+
+/// Frame sequences as the recogniser delivers them while a character stands or walks behind
+/// the chat window: the rows its name crosses read as something else for a few frames.
+final class ChatTrackerOcclusionTests: XCTestCase {
+    private static let plateBlue = RGBColor(r: 0.38, g: 0.38, b: 0.86)
+    private static let header = "[1. 공개 - 도시] [Brann Oakheart]: any"
+    private static let rows = ["tips for leveling a warrior without dying so", "much in these caves please?"]
+    private static let body = "any " + rows.joined(separator: " ")
+
+    private func preamble(from row: Int) -> [OCRLine] {
+        [Layout.line(row, "[1. 공개 - 도시] [Hexbloom]: anyone selling linen cloth"),
+         Layout.line(row + 1, "[1. 공개 - 도시] [Quillon]: lf enchanter pst")]
+    }
+
+    /// Settled chat, then a three-row message arrives; `headerRow` is what its first row
+    /// reads as in each successive frame (nil: the row is not read at all).
+    private func play(_ headerRows: [OCRLine?], run: Run = Run(locale: .koKR)) -> Run {
+        for _ in 0..<4 { run.feed(Layout.frame(preamble(from: 9))) }
+        for head in headerRows {
+            var lines = preamble(from: 6)
+            if let head { lines.append(head) }
+            lines += Self.rows.enumerated().map { Layout.line(9 + $0.offset, $0.element) }
+            run.feed(Layout.frame(lines))
+        }
+        return run
+    }
+
+    private func clean() -> OCRLine { Layout.line(8, Self.header) }
+    private func newMessages(_ run: Run) -> [ChatMessage] { Array(run.emitted.dropFirst(2)) }
+
+    /// The report from the game, frame by frame: a name where the header row is, then the
+    /// channel tag with unreadable letters behind it, then the tag and half the speaker's name
+    /// followed by the name of the character behind the window, and only then the row itself.
+    /// One message must come out of it: the real one.
+    func testHeaderRowCoveredWhileTheMessageArrivesIsReadOnce() {
+        let covered: [OCRLine?] = [
+            Layout.line(8, "Vexley Thornwood", Self.plateBlue, x: 150, width: 330, height: 44),
+            Layout.line(8, "Vexley Thornwood", Self.plateBlue, x: 150, width: 330, height: 44),
+            Layout.line(8, "[1. 공개 - 도시] tıpsfar levaling å woryWardens>", Self.plateBlue, confidence: 0.5),
+            Layout.line(8, "[1. 공개 - 도시] tıpsfar levaling å woryWardens>", Self.plateBlue, confidence: 0.5),
+            Layout.line(8, "[1. 공개 - 도시] [Brann Vexley Thornwood", Self.plateBlue),
+            Layout.line(8, "[1. 공개 - 도시] [Brann Vexley Thornwood", Self.plateBlue),
+        ]
+        let run = play(covered + [clean(), clean(), clean()])
+        let new = newMessages(run)
+        XCTAssertEqual(new.map(\.body), [Self.body], "\(run.texts)")
+        XCTAssertEqual(new.first?.sender, "Brann Oakheart")
+        XCTAssertEqual(new.first?.channel, .publicChannel)
+        XCTAssertFalse(run.texts.contains { $0.contains("Vexley") || $0.contains("Wardens") || $0.contains("tıpsfar") }, "\(run.texts)")
+    }
+
+    /// The same with the garbled reads changing every frame, as they do while the character
+    /// walks: none of them may be reported in the meantime.
+    func testChangingMisreadsOfAHeaderRowAreNeverReported() {
+        let variants = ["[1. 공개Zat통유TILAmtreeus Oakheartj: any", "[1. 공개 - 도EotwakiAlusntreeheartl: any",
+                        "[1. 공개 - 도시] [Bra&orosakrReuritstany", "[1. 공개 - 도시] [Brann OaVexley: Thornwood"]
+        let run = play(variants.map { Layout.line(8, $0, Self.plateBlue, confidence: 0.5) })
+        XCTAssertEqual(run.emitted.count, 2, "nothing but the two settled lines so far: \(run.texts)")
+        _ = play([clean(), clean()], run: Run(locale: .koKR))   // sanity: the scene itself is sound
+        for _ in 0..<3 {
+            var lines = preamble(from: 6)
+            lines.append(clean())
+            lines += Self.rows.enumerated().map { Layout.line(9 + $0.offset, $0.element) }
+            run.feed(Layout.frame(lines))
+        }
+        XCTAssertEqual(newMessages(run).map(\.body), [Self.body], "\(run.texts)")
+        XCTAssertEqual(newMessages(run).first?.sender, "Brann Oakheart")
+    }
+
+    /// The character does not move: no clean read comes. After the bounded wait the wrapped
+    /// rows, which are chat for certain, go out under their channel with no speaker; whatever
+    /// stands behind the tag on the header row does not. A clean read much later is the same
+    /// message and is not reported again.
+    func testHeaderRowThatStaysCoveredGivesOnlyItsWrappedRows() {
+        let broken = Layout.line(8, "[1. 공개 - 도시] [Brann Vexley Thornwood", Self.plateBlue)
+        let run = play(Array(repeating: broken, count: 10))
+        let new = newMessages(run)
+        XCTAssertEqual(new.count, 1, "\(run.texts)")
+        XCTAssertNil(new.first?.sender)
+        XCTAssertEqual(new.first?.channel, .publicChannel)
+        XCTAssertEqual(new.first?.channelLabel, "1. 공개 - 도시")
+        XCTAssertEqual(new.first?.body, Self.rows.joined(separator: " "))
+        XCTAssertFalse(run.texts.contains { $0.contains("Vexley") || $0.contains("Thornwood") }, "\(run.texts)")
+        // Bounded: first seen in frame 5, out within the wait plus the usual one frame.
+        XCTAssertLessThanOrEqual(run.emittedAt.last ?? .max, 4 + ChatTracker.maxDoubtFrames + 1)
+
+        for _ in 0..<4 {
+            var lines = preamble(from: 6)
+            lines.append(clean())
+            lines += Self.rows.enumerated().map { Layout.line(9 + $0.offset, $0.element) }
+            run.feed(Layout.frame(lines))
+        }
+        XCTAssertEqual(newMessages(run).count, 1, "\(run.texts)")
+    }
+
+    /// A one-row message whose header never reads cleanly has nothing that is known to be
+    /// chat. Nothing of the row is passed on while the wait lasts; when it is over, a notice
+    /// says that a line could not be read (and nothing of what the row read as), so the newest
+    /// line is not simply missing. When the row is finally read, the message takes the
+    /// notice's place: one line in the list, the real one.
+    func testCoveredOneRowMessageIsHeldUntilItReadsCleanly() {
+        let run = Run(locale: .koKR)
+        for _ in 0..<4 { run.feed(Layout.frame(preamble(from: 9))) }
+        let scene = preamble(from: 8)
+        let broken = Layout.line(10, "[1. 공개 - 도시] [Tamsin Vexley Thornwood", Self.plateBlue)
+        for _ in 0..<ChatTracker.maxDoubtFrames { run.feed(Layout.frame(scene + [broken])) }
+        XCTAssertEqual(run.emitted.count, 2, "nothing while the wait lasts: \(run.texts)")
+        for _ in 0..<4 { run.feed(Layout.frame(scene + [broken])) }
+        XCTAssertEqual(run.emitted.count, 3, "\(run.texts)")
+        let notice = run.emitted[2]
+        XCTAssertEqual(notice.body, ChatTracker.unreadableNotice)
+        XCTAssertEqual(notice.channelLabel, "1. 공개 - 도시")
+        XCTAssertNil(notice.sender)
+        XCTAssertNil(notice.channel.group, "a notice is never sent for translation")
+        XCTAssertLessThanOrEqual(run.emittedAt[2], 4 + ChatTracker.maxDoubtFrames + 1, "within the wait")
+        XCTAssertFalse(run.everything.contains { $0.message.rawText.contains("Vexley") || $0.message.rawText.contains("Tamsin") })
+
+        for _ in 0..<3 { run.feed(Layout.frame(scene + [Layout.line(10, "[1. 공개 - 도시] [Tamsin Alder]: wtb healing potions")])) }
+        XCTAssertEqual(run.emitted.count, 3, "the message stands where the notice stood: \(run.texts)")
+        XCTAssertEqual(run.emitted.last?.sender, "Tamsin Alder")
+        XCTAssertEqual(run.emitted.last?.body, "wtb healing potions")
+        XCTAssertEqual(run.emitted.last?.channel, .publicChannel)
+        XCTAssertEqual(run.everything.count, 4, "the notice, then the message once")
+    }
+
+    /// A message that was read and reported, and is covered afterwards: whatever its rows
+    /// read as while covered is the same message.
+    func testReportedMessageCoveredLaterIsNotReportedAgain() {
+        let run = play([clean(), clean(), clean()])
+        XCTAssertEqual(newMessages(run).map(\.body), [Self.body])
+        let covered = ["[1. 공개 - 도시] tıpsfar levaling å woryWardens>", "[1. 공개 - 도시] [Brann Vexley Thornwood",
+                       "[1. 공개 - 도시] [Brann OaVexley: Thornwood", "Vexley Thornwood"]
+        for text in covered {
+            for _ in 0..<3 {
+                var lines = preamble(from: 6)
+                lines.append(Layout.line(8, text, Self.plateBlue, x: Layout.headerX, confidence: 0.5))
+                lines.append(Layout.line(9, "tips for levtlingewarWatrbtpout dying so"))
+                lines.append(Layout.line(10, Self.rows[1]))
+                run.feed(Layout.frame(lines))
+            }
+        }
+        for _ in 0..<4 {
+            var lines = preamble(from: 6)
+            lines.append(clean())
+            lines += Self.rows.enumerated().map { Layout.line(9 + $0.offset, $0.element) }
+            run.feed(Layout.frame(lines))
+        }
+        XCTAssertEqual(run.emitted.count, 3, "\(run.texts)")
+    }
+
+    /// A guild tag crossing a wrapped row makes it read differently in every frame. The
+    /// message waits for a read to repeat and goes out with that one.
+    func testWrappedRowThatReadsDifferentlyEachFrameSettlesOnTheRepeatedRead() {
+        let run = Run(locale: .koKR)
+        for _ in 0..<4 { run.feed(Layout.frame(preamble(from: 9))) }
+        let garbled = ["tipslamtene fagralarrior without dying so", "tips for levtlingewarWatrbtpout dying so",
+                       "tips for leveling a warraotemuWatsodaying so", Self.rows[0], Self.rows[0], Self.rows[0]]
+        for row in garbled {
+            var lines = preamble(from: 6)
+            lines.append(clean())
+            lines.append(Layout.line(9, row))
+            lines.append(Layout.line(10, Self.rows[1]))
+            run.feed(Layout.frame(lines))
+        }
+        XCTAssertEqual(newMessages(run).map(\.body), [Self.body], "\(run.texts)")
+    }
+
+    /// Names of the world alone on a row of the chat column are not lines of chat. A system
+    /// notice in the very same blue is: on a Korean client it is a Korean sentence.
+    func testNamesOfTheWorldOnAChatRowAreNotChat() {
+        let run = Run(locale: .koKR)
+        for _ in 0..<4 { run.feed(Layout.frame(preamble(from: 5))) }
+        let plates = ["Vexley Thornwood", "Dolmer Pike <Example Crew>", "<EXAMPLE>", "ern Wardens>", "vexley Thornwood"]
+        for (n, plate) in plates.enumerated() {
+            let line = Layout.line(7 + n % 2, plate, Self.plateBlue, x: Layout.headerX + CGFloat(n * 7), height: 44)
+            for _ in 0..<3 { run.feed(Layout.frame(preamble(from: 5) + [line])) }
+        }
+        XCTAssertEqual(run.emitted.count, 2, "\(run.texts)")
+        let notice = Layout.line(7, "단검 숙련도가 5(으)로 올랐습니다.", Self.plateBlue, x: Layout.headerX)
+        for _ in 0..<3 { run.feed(Layout.frame(preamble(from: 5) + [notice])) }
+        XCTAssertEqual(run.emitted.last?.body, "단검 숙련도가 5(으)로 올랐습니다.")
+        XCTAssertEqual(run.emitted.last?.channel, .system)
+        XCTAssertEqual(run.emitted.count, 3, "\(run.texts)")
+    }
+
+    /// A name the shape rule cannot tell from a notice (an NPC's Korean name, in the green of
+    /// loot text) where the header row is: the pink rows under it are not its wrapped rows,
+    /// and they come out under the header once that is read.
+    func testChatRowsDoNotJoinAHeadlessLineOfAnotherColour() {
+        let npc = Layout.line(8, "가나다 라마", Layout.nameplate, x: Layout.headerX, height: 44)
+        let run = play([npc, npc, npc, clean(), clean(), clean()])
+        XCTAssertFalse(run.texts.contains { $0.contains("가나다") && $0.contains("tips") }, "\(run.texts)")
+        let chat = newMessages(run).filter { $0.channel == .publicChannel }
+        XCTAssertEqual(chat.map(\.body), [Self.body], "\(run.texts)")
+        XCTAssertEqual(chat.first?.sender, "Brann Oakheart")
+    }
+
+    /// The first glyph of a name behind the window read into the front of a wrapped row: the
+    /// box grows taller and starts left of the column of wrapped rows. Still a wrapped row.
+    func testStrayGlyphInFrontOfAWrappedRowDoesNotSplitTheMessage() {
+        let run = Run(locale: .koKR)
+        for _ in 0..<4 { run.feed(Layout.frame(preamble(from: 9))) }
+        var lines = preamble(from: 7)
+        lines.append(Layout.line(9, "토박이 상인의 말: 말이 나왔으니 말인데, 저분이 바로 그분이에요.", Layout.npcSay, x: Layout.headerX))
+        lines.append(Layout.line(10, "d 용감한 분이죠. 이름은 모르겠네요.", Layout.npcSay, x: 58, height: 56))
+        for _ in 0..<4 { run.feed(Layout.frame(lines)) }
+        XCTAssertEqual(run.emitted.count, 3, "\(run.texts)")
+        XCTAssertEqual(run.emitted.last?.sender, "토박이 상인")
+        XCTAssertEqual(run.emitted.last?.body, "말이 나왔으니 말인데, 저분이 바로 그분이에요. 용감한 분이죠. 이름은 모르겠네요.")
+    }
+
+    /// The tab labels read as one piece ("General Combat Trade" with small gaps) right above
+    /// the tail of a message whose header has scrolled out: neither a message of their own nor
+    /// the head of that tail.
+    func testTabLabelsReadAsOnePieceAreNotChat() {
+        let run = Run(locale: .koKR)
+        var lines = [Layout.line(0, "일반 전투 Trade", Layout.tabGold, x: 102, width: 300, height: 26)]
+        lines.append(Layout.line(1, "all for Leveling, Dungeoning, WPvP, and"))
+        lines.append(Layout.line(2, "Raiding. Shoot us a message for an invite!"))
+        lines += preamble(from: 3)
+        for _ in 0..<5 { run.feed(Layout.frame(lines)) }
+        XCTAssertEqual(run.emitted.map(\.body), ["anyone selling linen cloth", "lf enchanter pst"], "\(run.texts)")
+    }
+
+    /// While one message waits for a better read, what was said after it waits too, so the
+    /// order on screen is the order reported.
+    func testMessagesBelowAHeldOneKeepTheirOrder() {
+        let run = Run(locale: .koKR)
+        for _ in 0..<4 { run.feed(Layout.frame(preamble(from: 9))) }
+        func scene(_ head: OCRLine) -> OCRFrame {
+            var lines = preamble(from: 5)
+            lines.append(head)
+            lines += Self.rows.enumerated().map { Layout.line(8 + $0.offset, $0.element) }
+            lines.append(Layout.line(10, "[1. 공개 - 도시] [Tamsin Alder]: wtb healing potions"))
+            return Layout.frame(lines)
+        }
+        for _ in 0..<2 { run.feed(scene(Layout.line(7, "[1. 공개 - 도시] [Brann Vexley Thornwood", Self.plateBlue))) }
+        for _ in 0..<3 { run.feed(scene(Layout.line(7, Self.header))) }
+        XCTAssertEqual(newMessages(run).map(\.body), [Self.body, "wtb healing potions"], "\(run.texts)")
+    }
+}
+
+// MARK: - Rows that stay hidden, and what is said again once they read
+
+/// A chat window of eleven rows over a growing log of screen rows, bottom-aligned like the
+/// game's, read through whatever stands over some of its rows.
+private final class Scroll {
+    struct Row {
+        var text: String
+        var color: RGBColor = Palette.channel
+        /// nil: on the message column when the text starts with "[", else on the column of
+        /// wrapped rows.
+        var x: CGFloat?
+    }
+    static let rows = 11
+    let run = Run(locale: .koKR)
+    var log: [Row] = []
+
+    init() {
+        log = ["[1. 공개 - 도시] [Hexbloom]: anyone selling linen cloth", "[1. 공개 - 도시] [Quillon]: lf enchanter pst",
+               "[1. 공개 - 도시] [Mirelda]: wts copper bars cheap"].map { Row(text: $0) }
+    }
+
+    func add(_ texts: String..., color: RGBColor = Palette.channel) { log += texts.map { Row(text: $0, color: color) } }
+
+    /// One capture with the first `count` rows of the log on screen. `reading` gets a row's
+    /// place in the log, its row on screen and the line it reads as, and returns what is read
+    /// there instead (nil: nothing).
+    func show(_ count: Int, frames: Int = 1, reading: (Int, Int, OCRLine) -> OCRLine? = { _, _, line in line }) {
+        for _ in 0..<frames {
+            var lines: [OCRLine] = []
+            for index in max(0, count - Self.rows)..<count {
+                let screen = Self.rows - (count - index)
+                let row = log[index]
+                if let line = reading(index, screen, Layout.line(screen, row.text, row.color, x: row.x)) { lines.append(line) }
+            }
+            run.feed(Layout.frame(lines))
+        }
+    }
+
+    /// What the app lists after the three lines every scene starts with.
+    var said: [ChatMessage] { Array(run.emitted.dropFirst(3)) }
+    var frameSaid: [Int] { Array(run.emittedAt.dropFirst(3)) }
+    /// True when anything that ever went out carries one of `words`.
+    func everSaid(_ words: String...) -> Bool {
+        run.everything.contains { item in words.contains { item.message.rawText.contains($0) || item.message.body.contains($0) } }
+    }
+}
+
+final class ChatTrackerHiddenRowTests: XCTestCase {
+    private static let plateBlue = RGBColor(r: 0.38, g: 0.38, b: 0.86)
+    private static let message = ["[1. 공개 - 도시] [Brann Oakheart]: any", "tips for leveling a warrior without dying so",
+                                  "much in these caves please?"]
+    private static let body = "any tips for leveling a warrior without dying so much in these caves please?"
+
+    private func speaker(_ n: Int) -> String {
+        "[1. 공개 - 도시] [\(["Aldric", "Bryn", "Cato", "Dessa", "Ewan", "Fira"][n])]: message number \(["one", "two", "three", "four", "five", "six"][n]) here"
+    }
+
+    /// The report: a character stands still behind the newest row of a quiet chat. Every
+    /// one-row message arrives under its name and reads as a damaged header for as long as it
+    /// is the newest. Each is announced by a notice within the wait, and is read once the next
+    /// message has pushed it clear; the last one stays a notice. No name of the world is ever
+    /// passed on.
+    func testOneRowMessagesUnderANameThatStaysAreAnnouncedThenRead() {
+        let scroll = Scroll()
+        scroll.show(3, frames: 4)
+        (0..<3).forEach { scroll.add(speaker($0)) }
+        let covered: (Int, Int, OCRLine) -> OCRLine? = { index, screen, line in
+            guard screen == Scroll.rows - 1 else { return line }
+            let name = ["Aldr", "Bry", "Cat"][index - 3]
+            return Layout.line(screen, "[1. 공개 - 도시] [\(name) Vexley Thornwood", Self.plateBlue)
+        }
+        scroll.show(4, frames: 8, reading: covered)
+        XCTAssertEqual(scroll.said.map(\.body), [ChatTracker.unreadableNotice])
+        XCTAssertLessThanOrEqual(scroll.frameSaid.first ?? .max, 4 + ChatTracker.maxDoubtFrames + 1, "the wait is bounded")
+        scroll.show(5, frames: 8, reading: covered)
+        XCTAssertEqual(scroll.said.map(\.body), ["message number one here", ChatTracker.unreadableNotice])
+        XCTAssertEqual(scroll.said.first?.sender, "Aldric")
+        scroll.show(6, frames: 8, reading: covered)
+        XCTAssertEqual(scroll.said.map(\.body), ["message number one here", "message number two here", ChatTracker.unreadableNotice])
+        XCTAssertEqual(scroll.said.map(\.sender), ["Aldric", "Bryn", nil])
+        XCTAssertFalse(scroll.everSaid("Vexley", "Thornwood"))
+        // Whoever stood there walks off: the last message is read where it is.
+        scroll.show(6, frames: 3)
+        XCTAssertEqual(scroll.said.map(\.sender), ["Aldric", "Bryn", "Cato"])
+        XCTAssertEqual(scroll.said.last?.body, "message number three here")
+    }
+
+    /// The header row of a wrapped message reads as nothing but the name over it. The rows
+    /// below are chat for certain: they go out within the wait, under the channel their
+    /// colour says, with no speaker. When the header row reads, the whole message takes
+    /// their place.
+    func testRowsUnderAHeaderRowThatReadsAsANameComeOutWithinTheWait() {
+        // The header row reads as the name alone; the same with another message below; the
+        // header row is not read at all (the name and the row cancel each other out).
+        for (alone, unread) in [(true, false), (false, false), (true, true), (false, true)] {
+            let note = "alone \(alone), unread \(unread)"
+            let scroll = Scroll()
+            scroll.show(3, frames: 4)
+            scroll.add(Self.message[0], Self.message[1], Self.message[2])
+            if !alone { scroll.add("[1. 공개 - 도시] [Tamsin Alder]: wtb healing potions") }
+            let shown = scroll.log.count
+            scroll.show(shown, frames: 9) { index, screen, line in
+                guard index == 3 else { return line }
+                return unread ? nil : Layout.line(screen, "Vexley Thornwood", Self.plateBlue, x: 150, width: 330, height: 44)
+            }
+            let rows = Self.message.dropFirst().joined(separator: " ")
+            XCTAssertEqual(scroll.said.first?.body, rows, "\(note): \(scroll.run.texts)")
+            XCTAssertNil(scroll.said.first?.sender, note)
+            XCTAssertEqual(scroll.said.first?.channel, .publicChannel, note)
+            XCTAssertLessThanOrEqual(scroll.frameSaid.first ?? .max, 4 + ChatTracker.maxDoubtFrames + 1, note)
+            XCTAssertEqual(scroll.said.map(\.body), alone ? [rows] : [rows, "wtb healing potions"], note)
+            XCTAssertFalse(scroll.everSaid("Vexley", "Thornwood"), note)
+
+            scroll.show(shown, frames: 3)
+            XCTAssertEqual(scroll.said.first?.body, Self.body, "\(note): \(scroll.run.texts)")
+            XCTAssertEqual(scroll.said.first?.sender, "Brann Oakheart", note)
+            XCTAssertEqual(scroll.said.first?.channelLabel, "1. 공개 - 도시", note)
+            XCTAssertEqual(scroll.said.count, alone ? 1 : 2, "nothing is listed twice, \(note): \(scroll.run.texts)")
+        }
+    }
+
+    /// The same with the header row reading as a different piece of garbage in every frame,
+    /// in the colour of what is drawn over it: the wait still ends.
+    func testHeaderRowThatReadsDifferentlyInEveryFrameDoesNotHoldItsRowsBack() {
+        let garbage = ["[1. 공개Zat통유TILAmtreeus Oakheartj: any", "[1. 공개 - 도EotwakiAlusntreeheartl: any",
+                       "[1. 공개 - 도시] [Bra&orosakrReuritstany", "[1. 공개 - 도시] [Brann OaVexley: Thornwood",
+                       "[1. 공개 - 도시] wirhour atesib araifeyWardens>"]
+        let scroll = Scroll()
+        scroll.show(3, frames: 4)
+        scroll.add(Self.message[0], Self.message[1], Self.message[2])
+        var frame = 0
+        scroll.show(6, frames: 10) { index, screen, line in
+            guard index == 3 else { return line }
+            frame += 1
+            return Layout.line(screen, garbage[frame % garbage.count], Self.plateBlue, confidence: 0.5)
+        }
+        XCTAssertEqual(scroll.said.map(\.body), [Self.message.dropFirst().joined(separator: " ")], "\(scroll.run.texts)")
+        XCTAssertLessThanOrEqual(scroll.frameSaid.first ?? .max, 4 + ChatTracker.maxDoubtFrames + 1)
+        XCTAssertNil(scroll.said.first?.sender)
+        XCTAssertFalse(scroll.everSaid("Vexley", "Thornwood", "wirhour", "Wardens"))
+        scroll.show(6, frames: 3)
+        XCTAssertEqual(scroll.said.map(\.body), [Self.body])
+        XCTAssertEqual(scroll.said.first?.sender, "Brann Oakheart")
+    }
+
+    /// A wrapped row that never reads the same way twice running, for longer than the wait:
+    /// none of its reads is the row. The message goes out with "…" in its place, which says
+    /// that something is missing and nothing that was not said; the row is put in once it
+    /// reads.
+    func testRowThatKeepsChangingIsLeftOutAndPutInLater() {
+        let garbled = ["tips for levelVexley Thornwoodut dying so", "tips for leveling a wVexley Thornwoodg so",
+                       "tips Vexley Thornwoodwarrior without dying so", "tips for leveling a warrior witVexley Thornwo"]
+        let scroll = Scroll()
+        scroll.show(3, frames: 4)
+        scroll.add(Self.message[0], Self.message[1], Self.message[2])
+        var frame = 0
+        scroll.show(6, frames: 12) { index, screen, line in
+            guard index == 4 else { return line }
+            frame += 1
+            return Layout.line(screen, garbled[frame % garbled.count], confidence: 0.6)
+        }
+        XCTAssertEqual(scroll.said.map(\.body), ["any … much in these caves please?"], "\(scroll.run.texts)")
+        XCTAssertEqual(scroll.said.first?.sender, "Brann Oakheart")
+        XCTAssertLessThanOrEqual(scroll.frameSaid.first ?? .max, 4 + ChatTracker.maxDoubtFrames + 1)
+        XCTAssertFalse(scroll.everSaid("Vexley", "Thornwo"))
+        scroll.show(6, frames: 3)
+        XCTAssertEqual(scroll.said.map(\.body), [Self.body], "\(scroll.run.texts)")
+        XCTAssertEqual(scroll.run.everything.count, 5, "three lines, the message with the gap, the message whole")
+    }
+
+    /// A name that stays over a wrapped row from the moment its message arrives: the row
+    /// reads the same wrong way in every frame, under a sound header, and nothing in the text
+    /// tells. OCR does: it is unsure of such a row. The message goes out as it reads (there
+    /// is nothing better), and when the name has moved on and OCR reads the row with full
+    /// confidence, the message takes its place. Never the other way round: a row read with
+    /// confidence is not replaced by a later read OCR is unsure of.
+    func testMessageReadWithDoubtIsSaidAgainOnceItIsReadForSure() {
+        let scroll = Scroll()
+        scroll.show(3, frames: 4)
+        scroll.add(Self.message[0], Self.message[1], Self.message[2])
+        let covered: (Int, Int, OCRLine) -> OCRLine? = { index, screen, line in
+            index == 4 ? Layout.line(screen, "tips for leveling a wVexley Thornwoodg so", confidence: 0.5) : line
+        }
+        scroll.show(6, frames: 6, reading: covered)
+        XCTAssertEqual(scroll.said.map(\.body), ["any tips for leveling a wVexley Thornwoodg so much in these caves please?"],
+                       "nothing tells that the row is not the row yet")
+        scroll.show(6, frames: 3)
+        XCTAssertEqual(scroll.said.map(\.body), [Self.body], "\(scroll.run.texts)")
+        XCTAssertEqual(scroll.said.first?.sender, "Brann Oakheart")
+        XCTAssertEqual(scroll.run.everything.count, 5)
+        // The name comes back and stays: the sure read stands.
+        scroll.show(6, frames: 12, reading: covered)
+        scroll.show(6, frames: 3)
+        XCTAssertEqual(scroll.said.map(\.body), [Self.body])
+        XCTAssertEqual(scroll.run.everything.count, 5, "\(scroll.run.everything.map(\.message.rawText))")
+
+        // A row OCR stays unsure of and that never reads differently is reported once.
+        let steady = Scroll()
+        steady.show(3, frames: 4)
+        steady.add(Self.message[0], Self.message[1], Self.message[2])
+        steady.show(6, frames: 12) { index, _, line in
+            var line = line
+            if index == 4 { line.confidence = 0.5 }
+            return line
+        }
+        XCTAssertEqual(steady.said.map(\.body), [Self.body])
+        XCTAssertEqual(steady.run.everything.count, 4)
+    }
+
+    /// Chat that scrolls five rows per capture past a name that stays on one row of the
+    /// screen: the message that is new on that row reads as a damaged header (or as the name
+    /// alone) and is read one capture later, further up. Every message comes out once and in
+    /// the order it was said; the one left under the name when the chat stops is announced.
+    func testFastChatPastANameThatStaysLosesNothing() {
+        let names = ["Aldric", "Bryn", "Cato", "Dessa", "Ewan", "Fira", "Garth", "Hale", "Ivo", "Jora",
+                     "Kell", "Lysa", "Maro", "Nell", "Orin", "Pia", "Quen", "Rolf", "Sela", "Tov"]
+        let words = ["need healer for deadmines", "selling heavy leather stacks", "anyone doing stockade run",
+                     "where is the mage trainer", "looking for guild that raids", "buying wool cloth all of it",
+                     "can someone open lockbox", "port to darnassus paying", "warrior lfg scarlet monastery",
+                     "how do i get to ironforge", "free water at the bank", "tank lf group any dungeon",
+                     "enchanter here taking tips", "who stole my kill lol", "need one more for gnomer",
+                     "summon please at the stone", "wts silk cloth twenty stacks", "is the boat bugged again",
+                     "rogue lf lockpick practice", "last spot for uldaman go"]
+        for nameOnly in [false, true] {
+            let scroll = Scroll()
+            scroll.show(3, frames: 4)
+            for (name, said) in zip(names, words) { scroll.add("[1. 공개 - 도시] [\(name)]: \(said)") }
+            let covered: (Int, Int, OCRLine) -> OCRLine? = { _, screen, line in
+                guard screen == 6 else { return line }
+                return nameOnly ? Layout.line(screen, "Vexley Thornwood", Self.plateBlue, x: 200, width: 330, height: 44)
+                    : Layout.line(screen, "[1. 공개 - 도시] [Vexley Thornwood <Dawn Wardens>", Self.plateBlue)
+            }
+            for count in [8, 13, 18, 23] { scroll.show(count, reading: covered) }
+            scroll.show(23, frames: 8, reading: covered)
+            // Row 6 of the last capture holds the sixteenth message.
+            var expected = words
+            expected[15] = ChatTracker.unreadableNotice
+            XCTAssertEqual(scroll.said.map(\.body), expected, "name only \(nameOnly)")
+            XCTAssertFalse(scroll.everSaid("Vexley", "Wardens"))
+        }
+    }
+
+    /// Brackets of a name that OCR reads as letters, or not at all, in every frame, with
+    /// nothing drawn over the row: the message is not lost. Both brackets read as "I" is a
+    /// header like any other; a bracket that is simply missing makes the header a doubtful
+    /// one, which waits and is then taken at its word because it never read differently.
+    func testNameBracketsThatAreNeverReadDoNotLoseTheMessage() {
+        let forms: [(text: String, sender: String?, body: String)] = [
+            ("[1. 공개 - 도시] ISable QuillfeatherI: selling two stacks of linen", "Sable Quillfeather", "selling two stacks of linen"),
+            ("[1. 공개 - 도시] [Sable Quillfeather: selling two stacks of linen", "Sable Quillfeather", "selling two stacks of linen"),
+            ("[1. 공개 - 도시] Sable Quillfeather: selling two stacks of linen", nil, "Sable Quillfeather: selling two stacks of linen"),
+        ]
+        for form in forms {
+            let scroll = Scroll()
+            scroll.show(3, frames: 4)
+            scroll.add(form.text)
+            scroll.show(4, frames: 8)
+            XCTAssertEqual(scroll.said.map(\.body), [form.body], form.text)
+            XCTAssertEqual(scroll.said.first?.sender, form.sender, form.text)
+            XCTAssertEqual(scroll.said.first?.channel, .publicChannel, form.text)
+            XCTAssertLessThanOrEqual(scroll.frameSaid.first ?? .max, 4 + ChatTracker.maxDoubtFrames + 1, form.text)
+        }
+        let p = ChatLineParser.parse(forms[0].text, locale: .koKR, color: Palette.channel)
+        XCTAssertFalse(p.isDamagedHeader)
+        XCTAssertEqual(p.sender, "Sable Quillfeather")
+        // What a name of the world leaves behind the colon is not taken for speech, however
+        // long it stays: only that a line was there is said.
+        for text in ["[1. 공개 - 도시] [Brann Vexley: Thornwood", "[1. 공개 - 도시] Vexley Thornwood: Dawn Wardens"] {
+            let scroll = Scroll()
+            scroll.show(3, frames: 4)
+            scroll.add(text)
+            scroll.show(4, frames: 8)
+            XCTAssertEqual(scroll.said.map(\.body), [ChatTracker.unreadableNotice], text)
+        }
+    }
+
+    /// Words between two brackets that do not read like a name (what OCR makes of a name with
+    /// another one drawn over it, and is unsure of) are not a speaker: the header row is a
+    /// damaged one.
+    func testWordsBetweenBracketsThatAreNoNameAreNotASpeaker() {
+        let odd = "[1. 공개 - 도시] [A Wexlay thoruwcods]: any"
+        XCTAssertTrue(ChatLineParser.parse(odd, locale: .koKR, color: Palette.channel).isDamagedHeader)
+        // A first letter read in the wrong case is no such evidence, nor is a small word.
+        for sound in ["[1. 공개 - 도시] [Brann Oakheart]: any", "[1. 공개 - 도시] [Brann oakheart]: any", "[4. 파티찾기] [Brann of Oakheart]: LFG",
+                      "[길드] [달빛 나루]: 안녕하세요", "[Brann Oakheart]님의 외침: any"] {
+            XCTAssertFalse(ChatLineParser.parse(sound, locale: .koKR, color: Palette.channel).isDamagedHeader, sound)
+        }
+        // Read with little confidence, words that are no name are not believed either, with
+        // or without such a letter; read with confidence, the same header row is a header row.
+        for name in ["A Wexlay thoruwcods", "Wexlay thoruwcods"] {
+            let scroll = Scroll()
+            scroll.show(3, frames: 4)
+            scroll.add(Self.message[0], Self.message[1], Self.message[2])
+            scroll.show(6, frames: 9) { index, screen, line in
+                index == 3 ? Layout.line(screen, "[1. 공개 - 도시] [\(name)]: any", confidence: 0.3) : line
+            }
+            XCTAssertEqual(scroll.said.map(\.sender), [nil], "\(name): \(scroll.run.texts)")
+            XCTAssertEqual(scroll.said.first?.body, Self.message.dropFirst().joined(separator: " "), name)
+            XCTAssertFalse(scroll.everSaid("Wexlay", "thoruwcods"), name)
+        }
+        let scroll = Scroll()
+        scroll.show(3, frames: 4)
+        scroll.add("[1. 공개 - 도시] [Brann oakheart]: any", Self.message[1], Self.message[2])
+        scroll.show(6, frames: 3)
+        XCTAssertEqual(scroll.said.map(\.body), [Self.body], "a clean read is not held back: \(scroll.run.texts)")
+        XCTAssertLessThanOrEqual(scroll.frameSaid.first ?? .max, 6)
+        // A name that really has a one-letter word, read with full confidence the same way
+        // for the whole wait, is a name after all: late, but neither lost nor without speaker.
+        let rare = Scroll()
+        rare.show(3, frames: 4)
+        rare.add("[1. 공개 - 도시] [J Oakheart]: selling two stacks of linen")
+        rare.show(4, frames: 8)
+        XCTAssertEqual(rare.said.map(\.body), ["selling two stacks of linen"], "\(rare.run.texts)")
+        XCTAssertEqual(rare.said.first?.sender, "J Oakheart")
+    }
+
+    /// A name of the world where a row in the MIDDLE of a wrapped message is: what is read
+    /// above and below it goes out as two pieces at first (the piece below with no speaker,
+    /// after the wait), and as one message, whole, once the row reads.
+    func testHiddenMiddleRowIsPutBackIntoItsMessage() {
+        let long = ["[1. 공개 - 도시] [Brann Oakheart]: selling the whole lot of leather and", "ore that i gathered this week, prices are low",
+                    "because i need the gold for a mount, whisper me", "before the evening raid starts please"]
+        let scroll = Scroll()
+        scroll.show(3, frames: 4)
+        scroll.add(long[0], long[1], long[2], long[3])
+        scroll.show(7, frames: 9) { index, screen, line in
+            index == 5 ? Layout.line(screen, "Vexley Thornwood", Self.plateBlue, x: 320, width: 330, height: 44) : line
+        }
+        XCTAssertEqual(scroll.said.map(\.body), ["selling the whole lot of leather and ore that i gathered this week, prices are low",
+                                                 "before the evening raid starts please"], "\(scroll.run.texts)")
+        XCTAssertFalse(scroll.everSaid("Vexley", "Thornwood"))
+        scroll.show(7, frames: 3)
+        XCTAssertEqual(scroll.said.map(\.body), [long.joined(separator: " ").replacingOccurrences(of: "[1. 공개 - 도시] [Brann Oakheart]: ", with: "")],
+                       "\(scroll.run.texts)")
+        XCTAssertEqual(scroll.said.first?.sender, "Brann Oakheart")
+    }
+
+    /// A row that is nothing but an item link in the green of the link, its brackets read as
+    /// thin letters: no name of the world, and a row of its message.
+    func testGreenLinkRowWithBracketsReadAsLettersStaysInItsMessage() {
+        let green = RGBColor(r: 0.11, g: 1, b: 0)
+        for link in ["IMoonsteel Broadswordl", "lMoonsteel BroadswordI", "[Moonsteel Broadsword]"] {
+            let scroll = Scroll()
+            scroll.show(3, frames: 4)
+            scroll.add("[1. 공개 - 도시] [Brann Oakheart]: LOOKING TO BUY")
+            scroll.log.append(Scroll.Row(text: link, color: green, x: Layout.wrappedX))
+            scroll.show(5, frames: 4)
+            XCTAssertEqual(scroll.said.map(\.body), ["LOOKING TO BUY [Moonsteel Broadsword]"], link)
+        }
+    }
+
+    /// One line alone on the bottom row after the chat had faded, damaged at first and read
+    /// cleanly then: one message. There is no second line on screen to tell that the window
+    /// did not move.
+    func testLoneLineReadAgainIsOneMessage() {
+        let run = Run(locale: .koKR)
+        let old = [Layout.line(9, "[1. 공개 - 도시] [Hexbloom]: anyone selling linen cloth"),
+                   Layout.line(10, "[1. 공개 - 도시] [Quillon]: lf enchanter pst")]
+        for _ in 0..<4 { run.feed(Layout.frame(old)) }
+        for _ in 0..<6 { run.feed(Layout.frame([])) }
+        for _ in 0..<3 { run.feed(Layout.frame([Layout.line(10, "[1. 공개 - 도시] [Tams Vexley Thornwood", Self.plateBlue)])) }
+        for _ in 0..<4 { run.feed(Layout.frame([Layout.line(10, "[1. 공개 - 도시] [Tamsin Alder]: brand new words after the fade")])) }
+        XCTAssertEqual(run.everything.count, 3, "\(run.everything.map(\.message.rawText))")
+        XCTAssertEqual(run.emitted.last?.sender, "Tamsin Alder")
+        XCTAssertEqual(run.emitted.last?.body, "brand new words after the fade")
+    }
+
+    /// Fast chat: the header row of a wrapped message is not read at all in the one capture
+    /// that shows it (the name over it and the row cancel each other out), and the next
+    /// capture has the message scrolled out of view. Its rows were read once, for sure, right
+    /// below known chat: they go out without a speaker instead of being lost.
+    func testRowsSeenOnceUnderAnUnreadHeaderRowAreNotLost() {
+        let scroll = Scroll()
+        scroll.show(3, frames: 4)
+        scroll.add(Self.message[0], Self.message[1], Self.message[2])
+        scroll.show(6) { index, _, line in index == 3 ? nil : line }
+        // Eleven one-row messages at once: a window full, and the message is gone.
+        (1..<6).forEach { scroll.add(speaker($0)) }
+        (0..<6).forEach { scroll.add(speaker($0).replacingOccurrences(of: "message number", with: "another line number")) }
+        scroll.show(17, frames: 6)
+        let rows = Self.message.dropFirst().joined(separator: " ")
+        XCTAssertEqual(scroll.said.first?.body, rows, "\(scroll.run.texts)")
+        XCTAssertNil(scroll.said.first?.sender)
+        XCTAssertEqual(scroll.said.first?.channel, .publicChannel)
+        XCTAssertEqual(scroll.said.count, 12, "the rows and the eleven lines after them: \(scroll.run.texts)")
+
+        // Read once and not for sure, such rows prove nothing: a one-off misread is not chat.
+        let unsure = Scroll()
+        unsure.show(3, frames: 4)
+        unsure.add(Self.message[0], Self.message[1], Self.message[2])
+        unsure.show(6) { index, _, line in
+            var line = line
+            line.confidence = 0.5
+            return index == 3 ? nil : line
+        }
+        (1..<6).forEach { unsure.add(speaker($0)) }
+        (0..<6).forEach { unsure.add(speaker($0).replacingOccurrences(of: "message number", with: "another line number")) }
+        unsure.show(17, frames: 6)
+        XCTAssertEqual(unsure.said.count, 11, "\(unsure.run.texts)")
+        XCTAssertFalse(unsure.everSaid("caves"))
+    }
+}
+
+final class ChatCorrectionTests: XCTestCase {
+    private func entry(_ body: String) -> ChatEntry {
+        ChatEntry(message: ChatMessage(channel: .publicChannel, channelLabel: "1. 공개 - 도시", sender: nil, body: body,
+                                       rawText: body, color: Palette.channel, firstSeen: Date(timeIntervalSince1970: 0)),
+                  state: .original)
+    }
+
+    /// A line that stands in for earlier ones takes the place of the first and removes the
+    /// rest; any other line goes to the end.
+    func testALineThatSaysEarlierOnesAgainTakesTheirPlace() {
+        var list = ["one", "two", "three", "four"].map(entry)
+        let ids = list.map(\.id)
+        list.place(entry("five"))
+        XCTAssertEqual(list.map(\.message.body), ["one", "two", "three", "four", "five"])
+        list.place(entry("two, whole"), replacing: [ids[1]])
+        XCTAssertEqual(list.map(\.message.body), ["one", "two, whole", "three", "four", "five"])
+        list.place(entry("three and four"), replacing: [ids[3], ids[2]])
+        XCTAssertEqual(list.map(\.message.body), ["one", "two, whole", "three and four", "five"])
+        // Earlier lines the list no longer holds: the new one is simply new.
+        list.place(entry("six"), replacing: [ids[1], UUID()])
+        XCTAssertEqual(list.map(\.message.body), ["one", "two, whole", "three and four", "five", "six"])
+    }
+
+    /// The tracker names the message a second report replaces, and only for second reports.
+    func testSecondReportsNameTheMessageTheyReplace() {
+        let tracker = ChatTracker(clientLocale: .koKR)
+        var clock = Date(timeIntervalSince1970: 1_700_000_000)
+        var out: [ChatMessage] = []
+        var replaced: [UUID: [UUID]] = [:]
+        func feed(_ lines: [OCRLine]) {
+            clock += 0.7
+            let messages = tracker.ingest(Layout.frame(lines), now: clock)
+            XCTAssertTrue(Set(tracker.corrections.keys).isSubset(of: Set(messages.map(\.id))))
+            replaced.merge(tracker.corrections) { _, new in new }
+            out += messages
+        }
+        let top = [Layout.line(8, "[1. 공개 - 도시] [Hexbloom]: anyone selling linen cloth"),
+                   Layout.line(9, "[1. 공개 - 도시] [Quillon]: lf enchanter pst")]
+        for _ in 0..<4 { feed(top) }
+        XCTAssertTrue(replaced.isEmpty)
+        let blue = RGBColor(r: 0.38, g: 0.38, b: 0.86)
+        for _ in 0..<8 { feed(top + [Layout.line(10, "[1. 공개 - 도시] [Tamsin Vexley Thornwood", blue)]) }
+        XCTAssertEqual(out.count, 3)
+        XCTAssertTrue(replaced.isEmpty, "a first report replaces nothing")
+        for _ in 0..<3 { feed(top + [Layout.line(10, "[1. 공개 - 도시] [Tamsin Alder]: wtb healing potions")]) }
+        XCTAssertEqual(out.count, 4)
+        XCTAssertEqual(replaced, [out[3].id: [out[2].id]])
+        feed(top + [Layout.line(10, "[1. 공개 - 도시] [Tamsin Alder]: wtb healing potions")])
+        XCTAssertTrue(tracker.corrections.isEmpty, "only the latest capture's second reports are listed")
+    }
+}
+
+// MARK: - A name read into a row for sure, and gone a moment later
+
+final class ChatTrackerShedNameTests: XCTestCase {
+    private static let message = ["[1. 공개 - 도시] [Brann Oakheart]: any", "tips for leveling a warrior without dying so",
+                                  "much in these caves please?"]
+    private static let body = "any tips for leveling a warrior without dying so much in these caves please?"
+
+    /// A name stands right behind the end of a row when its message arrives, and OCR reads
+    /// the two as one row, sure of every glyph: nothing tells them apart, and the message
+    /// goes out with the name. Names move on and chat stays: when the row has read without
+    /// the name twice running, the message is said again without it, in the same place.
+    func testNameBehindTheEndOfARowIsTakenBackOnceItIsGone() {
+        for tail in ["Vexley Thornwoo", "<Dawn Wardens>", "Vexley Thornwood <Dawn Wardens>"] {
+            for frames in [2, 3, 10] {
+                let note = "\(tail), \(frames) frames"
+                let withName: (Int, Int, OCRLine) -> OCRLine? = { index, screen, line in
+                    index == 5 ? Layout.line(screen, Self.message[2] + " " + tail) : line
+                }
+                let scroll = Scroll()
+                scroll.show(3, frames: 4)
+                scroll.add(Self.message[0], Self.message[1], Self.message[2])
+                scroll.show(6, frames: frames, reading: withName)
+                XCTAssertEqual(scroll.said.map(\.body), [Self.body + " " + tail], note)
+                // One capture without the name is a glimpse, not the row.
+                scroll.show(6, frames: 1)
+                XCTAssertEqual(scroll.run.everything.count, 4, note)
+                scroll.show(6, frames: 2, reading: withName)
+                XCTAssertEqual(scroll.run.everything.count, 4, note)
+
+                scroll.show(6, frames: 2)
+                XCTAssertEqual(scroll.said.map(\.body), [Self.body], "\(note): \(scroll.run.texts)")
+                XCTAssertEqual(scroll.said.first?.sender, "Brann Oakheart", note)
+                XCTAssertEqual(scroll.run.everything.count, 5, "three lines, the message with the name, the message: \(note)")
+                // The name comes back and leaves again: what stands is not said a third time.
+                scroll.show(6, frames: 4, reading: withName)
+                scroll.show(6, frames: 3)
+                XCTAssertEqual(scroll.said.map(\.body), [Self.body], note)
+                XCTAssertEqual(scroll.run.everything.count, 5, note)
+            }
+        }
+    }
+
+    /// The same on a header row: the name stands behind its few words, or where they are
+    /// (and all that is read behind the colon is the name).
+    func testNameReadIntoAHeaderRowIsTakenBackOnceItIsGone() {
+        for covered in ["[1. 공개 - 도시] [Brann Oakheart]: any Vexley Thornwood", "[1. 공개 - 도시] [Brann Oakheart]: any <Dawn Wardens>",
+                        "[1. 공개 - 도시] [Brann Oakheart]: Vexley Thornwood"] {
+            let scroll = Scroll()
+            scroll.show(3, frames: 4)
+            scroll.add(Self.message[0], Self.message[1], Self.message[2])
+            scroll.show(6, frames: 3) { index, screen, line in index == 3 ? Layout.line(screen, covered) : line }
+            XCTAssertEqual(scroll.said.count, 1, covered)
+            XCTAssertTrue(scroll.everSaid("Vexley", "Wardens"), "read with full confidence, the name is not told from chat: \(covered)")
+            scroll.show(6, frames: 3)
+            XCTAssertEqual(scroll.said.map(\.body), [Self.body], "\(covered): \(scroll.run.texts)")
+            XCTAssertEqual(scroll.said.first?.sender, "Brann Oakheart", covered)
+            XCTAssertEqual(scroll.run.everything.count, 5, covered)
+        }
+    }
+
+    /// A message that went out, and whose row reads later as the same header with other
+    /// words behind the colon (a name drawn through them), used to be listed a second time,
+    /// as something its speaker said. One row of the chat is one line: nothing new goes out,
+    /// whether OCR is unsure of the later read or sure of it, and the row read again as it
+    /// went out is no new line either.
+    func testRowReadDifferentlyUnderTheSameSpeakerIsNotAnotherMessage() {
+        let row = "[1. 공개 - 도시] [Brann Oakheart]: selling two stacks of linen"
+        let later: [(String, Double)] = [
+            ("[1. 공개 - 도시] [Brann Oakheart]: selling tVexley Thornwoodinen", 0.5),
+            ("[1. 공개 - 도시] [Brann Oakheart]: selling tVexley Thornwoodinen", 1),
+            ("[1. 공개 - 도시] [Brann Oakheart]: selling two", 1),
+            ("[1. 공개 - 도시] [Brann Oakheart]: selling two stacks of linen Vexley Thornwood <Dawn Wardens>", 1),
+        ]
+        for (covered, confidence) in later {
+            let scroll = Scroll()
+            scroll.show(3, frames: 4)
+            scroll.add(row)
+            scroll.show(4, frames: 4)
+            scroll.show(4, frames: 6) { index, screen, line in
+                index == 3 ? Layout.line(screen, covered, confidence: confidence) : line
+            }
+            scroll.show(4, frames: 5)
+            XCTAssertEqual(scroll.said.map(\.body), ["selling two stacks of linen"], "\(covered) at \(confidence)")
+            XCTAssertEqual(scroll.run.everything.count, 4, "\(covered) at \(confidence): \(scroll.run.everything.map(\.message.rawText))")
+        }
+        // Covered from the moment it arrives, in a read OCR is unsure of: what went out is
+        // replaced by the sure read, not joined by it.
+        let early = Scroll()
+        early.show(3, frames: 4)
+        early.add(row)
+        early.show(4, frames: 3) { index, screen, line in
+            index == 3 ? Layout.line(screen, later[0].0, confidence: 0.5) : line
+        }
+        XCTAssertEqual(early.said.count, 1)
+        early.show(4, frames: 4)
+        XCTAssertEqual(early.said.map(\.body), ["selling two stacks of linen"], "\(early.run.texts)")
+        XCTAssertEqual(early.run.everything.count, 5)
+
+        // Somebody else on that row is another line (another chat tab with the same lines
+        // around it), and so is the same speaker's row read whole after a first read that
+        // stopped short: nothing tells that one from a line of its own.
+        for other in ["[1. 공개 - 도시] [Tamsin Alder]: wtb healing potions", row] {
+            let scroll = Scroll()
+            scroll.show(3, frames: 4)
+            scroll.add("[1. 공개 - 도시] [Brann Oakheart]: selling two")
+            scroll.show(4, frames: 4)
+            scroll.show(4, frames: 4) { index, screen, line in index == 3 ? Layout.line(screen, other) : line }
+            XCTAssertEqual(scroll.said.map(\.body), ["selling two", other.components(separatedBy: "]: ")[1]], other)
+        }
+    }
+
+    /// The same in a quiet chat, with one other line on screen or none at all (the others
+    /// have faded): one line that stayed where it was, or the row being the only one before
+    /// and after, is enough to know which row is read.
+    func testRowReadDifferentlyInAQuietChatIsNotAnotherMessage() {
+        let row = "[1. 공개 - 도시] [Brann Oakheart]: selling two stacks of linen"
+        let garbled = "[1. 공개 - 도시] [Brann Oakheart]: selling tVexley Thornwoodinen"
+        for neighbours in [0, 1] {
+            for confidence in [0.5, 1.0] {
+                let note = "\(neighbours) other line(s), read at \(confidence)"
+                let others = neighbours == 1 ? [Layout.line(9, "[1. 공개 - 도시] [Hexbloom]: anyone selling linen cloth")] : []
+                let run = Run(locale: .koKR)
+                for _ in 0..<4 { run.feed(Layout.frame(others + [Layout.line(10, row)])) }
+                XCTAssertEqual(run.emitted.count, neighbours + 1, note)
+                for _ in 0..<6 { run.feed(Layout.frame(others + [Layout.line(10, garbled, confidence: confidence)])) }
+                for _ in 0..<4 { run.feed(Layout.frame(others + [Layout.line(10, row)])) }
+                XCTAssertEqual(run.everything.count, neighbours + 1, "\(note): \(run.everything.map(\.message.rawText))")
+                XCTAssertEqual(run.emitted.last?.body, "selling two stacks of linen", note)
+            }
+        }
+    }
+
+    /// A row that really ends in words that could be a name, read a moment later with a
+    /// glyph more or less in its last word, is the same row spelt differently and not a row
+    /// that has lost a name: nothing is said again.
+    func testSameRowSpeltDifferentlyIsNotARowWithoutAName() {
+        let place = "[1. 공개 - 도시] [Brann Oakheart]: lets all go to Molten Core"
+        for later in [place + ".", String(place.dropLast()), place + "I", place.replacingOccurrences(of: "Core", with: "Gore")] {
+            let scroll = Scroll()
+            scroll.show(3, frames: 4)
+            scroll.add(place)
+            scroll.show(4, frames: 3)
+            scroll.show(4, frames: 4) { index, screen, line in index == 3 ? Layout.line(screen, later) : line }
+            scroll.show(4, frames: 3)
+            XCTAssertEqual(scroll.said.map(\.body), ["lets all go to Molten Core"], later)
+            XCTAssertEqual(scroll.run.everything.count, 4, "\(later): \(scroll.run.everything.map(\.message.rawText))")
+        }
+        // The same for a row that says nothing but such words.
+        let scroll = Scroll()
+        scroll.show(3, frames: 4)
+        scroll.add("[1. 공개 - 도시] [Brann Oakheart]: Molten Core")
+        scroll.show(4, frames: 3)
+        scroll.show(4, frames: 4) { index, screen, line in
+            index == 3 ? Layout.line(screen, "[1. 공개 - 도시] [Brann Oakheart]: molten core") : line
+        }
+        scroll.show(4, frames: 3)
+        XCTAssertEqual(scroll.said.map(\.body), ["Molten Core"])
+        XCTAssertEqual(scroll.run.everything.count, 4)
+    }
+
+    /// Only this way round, and only for a while. A message that went out as it is and reads
+    /// with a name behind one of its rows later stands. So does one that really ends in
+    /// words that could be a name, and one whose last words are hidden long after it went
+    /// out (a window of the game opened over the chat): those were more likely hidden than
+    /// never there.
+    func testWhatWentOutIsNotTouchedByANameThatComesLaterOrWordsHiddenLater() {
+        let scroll = Scroll()
+        scroll.show(3, frames: 4)
+        scroll.add(Self.message[0], Self.message[1], Self.message[2])
+        scroll.show(6, frames: 3)
+        XCTAssertEqual(scroll.said.map(\.body), [Self.body])
+        scroll.show(6, frames: 6) { index, screen, line in
+            index == 5 ? Layout.line(screen, Self.message[2] + " Vexley Thornwoo") : line
+        }
+        scroll.show(6, frames: 4)
+        XCTAssertEqual(scroll.said.map(\.body), [Self.body])
+        XCTAssertEqual(scroll.run.everything.count, 4, "\(scroll.run.everything.map(\.message.rawText))")
+
+        let place = "[1. 공개 - 도시] [Brann Oakheart]: lets all go to Molten Core"
+        let late = Scroll()
+        late.show(3, frames: 4)
+        late.add(place)
+        late.show(4, frames: ChatTracker.shedFrames + 3)
+        XCTAssertEqual(late.said.map(\.body), ["lets all go to Molten Core"])
+        late.show(4, frames: 5) { index, screen, line in
+            index == 3 ? Layout.line(screen, "[1. 공개 - 도시] [Brann Oakheart]: lets all go to") : line
+        }
+        late.show(4, frames: 3)
+        XCTAssertEqual(late.said.map(\.body), ["lets all go to Molten Core"])
+        XCTAssertEqual(late.run.everything.count, 4, "\(late.run.everything.map(\.message.rawText))")
+    }
+}
+
+// MARK: - Yells of a Korean client
+
+final class KoreanYellTests: XCTestCase {
+    private let red = RGBColor(r: 0.9, g: 0.3, b: 0.3)
+
+    func testYellHeaderWithHonorific() {
+        for (text, name, body) in [
+            ("[Dorn Velmar]님의 외침: LF HEALER", "Dorn Velmar", "LF HEALER"),
+            ("[Dornvel]님의 외침: NEED SUMMON TO IRONFORGE", "Dornvel", "NEED SUMMON TO IRONFORGE"),
+            ("[Dornvel]의 외침: 여기요", "Dornvel", "여기요"),
+            // Red brackets read as thin letters, on both sides of the name.
+            ("IDorn VelmarI님의 외침: NEED SUMMON TO IRONFORGE", "Dorn Velmar", "NEED SUMMON TO IRONFORGE"),
+            ("lDorn Velmarl님의 외침: NEED SUMMON", "Dorn Velmar", "NEED SUMMON"),
+            ("1Dorn Velmar1님의 외침: NEED SUMMON", "Dorn Velmar", "NEED SUMMON"),
+            ("[Dorn Velmarj님의 외침: NEED SUMMON", "Dorn Velmar", "NEED SUMMON"),
+            // ... and a glyph or two of something else caught behind the closing one.
+            ("IDorn VelmarIHg님의 외침: NEED SUMMON TO IRONFORGE", "Dorn Velmar", "NEED SUMMON TO IRONFORGE"),
+            // The same seam with the opening bracket outside the captured region, as a real
+            // capture cut a few pixels too far right reads it.
+            ("Dorn Velmar|H9|님의 외침: LF HEALER", "Dorn Velmar", "LF HEALER"),
+            ("[Dorn Velmar]H9님의 외침: LF HEALER", "Dorn Velmar", "LF HEALER"),
+            ("Dornvel|Hg님의 외침: LF HEALER", "Dornvel", "LF HEALER"),
+        ] {
+            let p = ChatLineParser.parse(text, locale: .koKR, color: red)
+            XCTAssertTrue(p.hasPrefix, text)
+            XCTAssertEqual(p.channel, .yell, text)
+            XCTAssertEqual(p.sender, name, text)
+            XCTAssertEqual(p.body, body, text)
+            XCTAssertFalse(p.isDamagedHeader, text)
+        }
+        // A wrapped row of a yell that is nothing but a link is no header.
+        let link = ChatLineParser.parse("[Enchanting: Enchant Boots - Minor Stamina]", locale: .koKR, color: red)
+        XCTAssertFalse(link.hasPrefix)
+        XCTAssertNil(link.sender)
+    }
+
+    /// A yell is one message with its wrapped rows, the top row of the window included, and
+    /// a link on a row of its own stays inside it.
+    func testYellsAreReportedWithTheirWrappedRows() {
+        let run = Run(locale: .koKR)
+        var lines = [Layout.line(0, "[Dorn Velmar]님의 외침: LF HEALER", red)]
+        lines.append(Layout.line(1, "[1. 공개 - 도시] [Hexbloom]: anyone selling linen cloth"))
+        lines.append(Layout.line(2, "[Kessa Nightbloom]님의 외침: anyone need", red))
+        lines.append(Layout.line(3, "[Enchanting: Enchant Boots - Minor Stamina]", red, x: Layout.wrappedX))
+        lines.append(Layout.line(4, "for free? 9 left", red))
+        lines.append(Layout.line(5, "[Orrin Lutho]님의 외침: that comma is doing", red))
+        lines.append(Layout.line(6, "a lot of work", red))
+        lines.append(Layout.line(7, "[Dorn Velmar]님의 외침: NEED SUMMON TO IRONFORGE", red))
+        for _ in 0..<4 { run.feed(Layout.frame(lines)) }
+        XCTAssertEqual(run.emitted.map(\.channel), [.yell, .publicChannel, .yell, .yell, .yell], "\(run.texts)")
+        XCTAssertEqual(run.emitted.map(\.sender), ["Dorn Velmar", "Hexbloom", "Kessa Nightbloom", "Orrin Lutho", "Dorn Velmar"])
+        XCTAssertEqual(run.emitted.map(\.body), [
+            "LF HEALER", "anyone selling linen cloth",
+            "anyone need [Enchanting: Enchant Boots - Minor Stamina] for free? 9 left",
+            "that comma is doing a lot of work", "NEED SUMMON TO IRONFORGE",
+        ])
+    }
+
+    /// A name over the middle of a yell header: not a header any more, in the yell colour.
+    /// It is held like any damaged header row and replaced by the clean read.
+    func testCoveredYellHeaderIsReplacedByTheCleanRead() {
+        let run = Run(locale: .koKR)
+        let top = [Layout.line(5, "[1. 공개 - 도시] [Hexbloom]: anyone selling linen cloth"),
+                   Layout.line(6, "[1. 공개 - 도시] [Quillon]: lf enchanter pst")]
+        for _ in 0..<4 { run.feed(Layout.frame(top)) }
+        let covered = Layout.line(7, "[Dorn Velmar]남aRtrINPEDSUOIMON TO IRONFORGE", red, confidence: 0.5)
+        XCTAssertTrue(ChatLineParser.parse(covered.text, locale: .koKR, color: red).isDamagedHeader)
+        for _ in 0..<3 { run.feed(Layout.frame(top + [covered])) }
+        XCTAssertEqual(run.emitted.count, 2, "\(run.texts)")
+        for _ in 0..<3 { run.feed(Layout.frame(top + [Layout.line(7, "[Dorn Velmar]님의 외침: NEED SUMMON TO IRONFORGE", red)])) }
+        XCTAssertEqual(run.emitted.count, 3, "\(run.texts)")
+        XCTAssertEqual(run.emitted.last?.channel, .yell)
+        XCTAssertEqual(run.emitted.last?.body, "NEED SUMMON TO IRONFORGE")
+    }
+}
+
+// MARK: - Damaged headers and how a line is written out
+
+final class DamagedHeaderTests: XCTestCase {
+    private let pink = RGBColor(r: 1, g: 0.75, b: 0.75)
+
+    func testWhatCountsAsADamagedHeader() {
+        let damaged = [
+            "[1. 공개 - 도시] tıpsfar levaling å woryWardens>",       // tag, then no name group at all
+            "[1. 공개 - 도시] [Brann Vexley Thornwood",              // name group never closes, no colon
+            "[1. 공개 - 도시] [Brann OaVexley: Thornwood",           // ... or a colon somewhere behind it
+            "[1. 공개Zat통유TILAmtreeus Oakheartj: any",             // the tag itself is cut short
+            "[Brann Oakheart]남aRtrINPEDSUOIMON TO IRONFORGE",             // bracketed name, then no particle
+        ]
+        for text in damaged {
+            XCTAssertTrue(ChatLineParser.parse(text, locale: .koKR, color: pink).isDamagedHeader, text)
+        }
+        let sound = [
+            "[1. 공개 - 도시] [Brann Oakheart]: any",
+            "[1. 공개 - 도시] [Brann Oakheartl: any",                // closing bracket read as a letter
+            "[길드] [Brann]: hello there",
+            "[Brann Oakheart]님의 외침: hello",
+            "advice on leveling without quests",
+            "[21:04] 서버가 곧 재시작됩니다.",
+        ]
+        for text in sound {
+            XCTAssertFalse(ChatLineParser.parse(text, locale: .koKR, color: pink).isDamagedHeader, text)
+        }
+        // Text of a system notice that starts with a link is no damaged header.
+        let notice = ChatLineParser.parse("[Brann]님이 접속했습니다.", locale: .koKR, color: RGBColor(r: 1, g: 1, b: 0))
+        XCTAssertFalse(notice.isDamagedHeader)
+    }
+
+    /// A row that opens with a bracketed name and is no header this parser knows may be a
+    /// notice of the game ("[Name] is away: ..."). It waits like a damaged header row, and
+    /// then goes out as it reads, as a line of no channel — which is never translated.
+    func testUnknownNoticeBehindABracketedNameIsKeptUntranslated() {
+        let run = Run(locale: .koKR)
+        let top = [Layout.line(5, "[1. 공개 - 도시] [Hexbloom]: anyone selling linen cloth"),
+                   Layout.line(6, "[1. 공개 - 도시] [Quillon]: lf enchanter pst")]
+        for _ in 0..<4 { run.feed(Layout.frame(top)) }
+        let notice = Layout.line(7, "[Dorn Velmar]님은 자리 비움 상태입니다: brb dinner", RGBColor(r: 1, g: 0.5, b: 1))
+        for _ in 0..<8 { run.feed(Layout.frame(top + [notice])) }
+        XCTAssertEqual(run.emitted.count, 3, "\(run.texts)")
+        XCTAssertEqual(run.emitted.last?.rawText, notice.text)
+        XCTAssertNil(run.emitted.last?.channel.group, "not a channel that is translated")
+        XCTAssertNil(run.emitted.last?.sender)
+    }
+
+    /// A speaker whose name has two words is written once, whole, without brackets, after
+    /// the channel tag — in the overlay, the main window and the history file alike.
+    func testSpeakerWithTwoWordsIsWrittenOnceAndWhole() {
+        func message(_ text: String, _ color: RGBColor) -> ChatMessage {
+            let p = ChatLineParser.parse(text, locale: .koKR, color: color)
+            return ChatMessage(channel: p.channel, channelLabel: p.channelLabel, sender: p.sender, body: p.body,
+                               rawText: text, color: color, firstSeen: Date(timeIntervalSince1970: 0))
+        }
+        let channel = message("[1. 공개 - 도시] [Tamsin Alder]: Dps Lf Stocks", pink)
+        XCTAssertEqual(channel.sender, "Tamsin Alder")
+        XCTAssertEqual(channel.channelLabel, "1. 공개 - 도시")
+        XCTAssertEqual(ChatDisplay.prefix(for: channel), "[1. 공개 - 도시] Tamsin Alder: ")
+        XCTAssertEqual(ChatDisplay.senderPrefix(for: channel), "Tamsin Alder: ")
+
+        // With the channel tag outside the captured region the first word is not a tag.
+        let bare = message("[Tamsin Alder]: Dps Lf Stocks", pink)
+        XCTAssertEqual(ChatDisplay.prefix(for: bare), "Tamsin Alder: ")
+        // Closing bracket read as a letter, with and without a tag in front.
+        for damaged in ["[1. 공개 - 도시] [Tamsin Alderl: Dps Lf Stocks", "[1. 공개 - 도시] [Tamsin Alderj: Dps Lf Stocks",
+                        "[1. 공개 - 도시 [Tamsin Alder]: Dps Lf Stocks"] {
+            XCTAssertEqual(ChatDisplay.prefix(for: message(damaged, pink)), "[1. 공개 - 도시] Tamsin Alder: ", damaged)
+        }
+        for damaged in ["[Tamsin Alderl: Dps Lf Stocks", "[Tamsin AlderJ: Dps Lf Stocks"] {
+            let m = message(damaged, pink)
+            XCTAssertNil(m.channelLabel, "\"Tamsin\" is not a channel tag: \(damaged)")
+            XCTAssertNotEqual(m.sender, "Alder", damaged)
+        }
+        let yell = message("[Tamsin Alder]님의 외침: Dps Lf Stocks", RGBColor(r: 1, g: 0.25, b: 0.25))
+        XCTAssertEqual(ChatDisplay.prefix(for: yell), "Tamsin Alder: ")
+        let whisper = message("[Tamsin Alder]님의 귓속말: hi", RGBColor(r: 1, g: 0.5, b: 1))
+        XCTAssertEqual(ChatDisplay.prefix(for: whisper), "[귓속말] Tamsin Alder: ")
+        let system = message("서버가 곧 재시작됩니다.", RGBColor(r: 1, g: 1, b: 0))
+        XCTAssertEqual(ChatDisplay.prefix(for: system), "")
+
+        // An emote names its speaker in its own text: the whole name is the speaker, and it
+        // is not written a second time in front of the line.
+        let orange = RGBColor(r: 1, g: 0.5, b: 0.25)
+        for (text, name) in [("Tamsin Alder가 신나게 춤을 춥니다.", "Tamsin Alder"),
+                             ("Tamsin Alder이 Brann Oakheart에게 감사해 합니다.", "Tamsin Alder"),
+                             ("Tamsin가 신나게 춤을 춥니다.", "Tamsin"),
+                             ("Tamsin Alder waves at you.", "Tamsin"),
+                             ("탐신님이 손을 흔듭니다.", "탐신")] {
+            let emote = message(text, orange)
+            XCTAssertEqual(emote.channel, .emote, text)
+            XCTAssertEqual(emote.sender, name, text)
+            XCTAssertEqual(ChatDisplay.prefix(for: emote), "", text)
         }
     }
 }

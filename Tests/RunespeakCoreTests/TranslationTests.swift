@@ -277,6 +277,207 @@ final class ClaudeTranslatorTests: XCTestCase {
         XCTAssertEqual(opus["fallbacks"] as? String, "default")
     }
 
+    /// "Dps Lf Stocks" is a damage dealer looking for a group, not a group looking for one:
+    /// the prompt and the shipped LF / role rows must say which way round it is.
+    func testPromptAndDictionaryTellWhoIsLookingForWhom() throws {
+        let prompt = TranslationPrompt.system
+        XCTAssertTrue(prompt.contains("Who is looking for what"))
+        XCTAssertTrue(prompt.contains("\"Dps Lf Stocks\""))
+        XCTAssertTrue(prompt.contains("딜러인데 스톰윈드 지하감옥 파티 구함"))
+        XCTAssertTrue(prompt.contains("스톰윈드 지하감옥 딜러 구함"))
+        XCTAssertFalse(prompt.contains("\"LF tank\": \"탱커 구함\""))
+        XCTAssertTrue(prompt.contains("\"2 dps LF tank SM\""))
+        XCTAssertTrue(prompt.contains("딜러 2명 있음, 수도원 탱커 구함"))
+        XCTAssertTrue(prompt.contains("\"LFG UBRS need healer\""))
+
+        let data = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("data")
+        for file in ["abbreviations.classic.tsv", "abbreviations.retail.tsv"] {
+            let rows = try String(contentsOf: data.appendingPathComponent(file), encoding: .utf8)
+                .split(separator: "\n").map { $0.split(separator: "\t", omittingEmptySubsequences: false) }
+            func note(_ abbr: String) -> String { rows.first { $0.first.map(String.init) == abbr }?.last.map(String.init) ?? "" }
+            XCTAssertTrue(note("LF").contains("BEFORE LF is the writer"), file)
+            XCTAssertTrue(note("LF").contains("AFTER LF is what a group wants"), file)
+            XCTAssertTrue(note("LFG").contains("writer's own"), file)
+            // The LFG row and the role rows must not pull "LFG ... need healer" two ways.
+            XCTAssertFalse(note("LFG").contains("never the role wanted"), file)
+            XCTAssertTrue(note("LFG").contains("only a role after 'need'"), file)
+            XCTAssertTrue(note("LF").contains("roles on both sides"), file)
+            for role in ["tank", "heals", "dps"] {
+                XCTAssertTrue(note(role).contains("before LF or next to LFG it is the writer's own role"), "\(file) \(role)")
+                XCTAssertTrue(note(role).contains("with roles on both sides of LF"), "\(file) \(role)")
+            }
+        }
+    }
+
+    /// A player who types "/me farts in general chat" into a channel has written a sentence,
+    /// not a command: it is sent for translation as prose and comes back marked as an action.
+    func testTypedEmoteIsTranslatedAsProse() async throws {
+        XCTAssertEqual(TranslationPrompt.typedEmote("/me farts in general chat"), "farts in general chat")
+        XCTAssertEqual(TranslationPrompt.typedEmote("/e is going to bed"), "is going to bed")
+        XCTAssertEqual(TranslationPrompt.typedEmote("/EM waves"), "waves")
+        XCTAssertEqual(TranslationPrompt.typedEmote(" /emote  bows "), "bows")
+        for other in ["/me", "/me ", "/meow at the cat", "/roll 100", "/w Thrall hi", "me too", "LF tank /me", "10/10 would run again"] {
+            XCTAssertNil(TranslationPrompt.typedEmote(other), other)
+        }
+        XCTAssertTrue(LanguageGate.needsTranslation("/me farts in general chat", reader: .korean), "the line is not left in the original")
+
+        StubURLProtocol.install { _, _ in
+            .init(json: claudeResponse(text: translations([(1, "/me 공개 채팅에서 방귀를 뀝니다"), (2, "(행동) 손을 흔듭니다"), (3, "탱커 구함")])))
+        }
+        let lines = [message("/me farts in general chat", channel: .publicChannel, label: "1. 공개 - 스톰윈드", sender: "Brannok"),
+                     message("/e waves", channel: .yell, label: nil, sender: "Odalys"),
+                     message("LF tank /me pls")]
+        let result = try await makeTranslator().translateIncoming(lines, context: context(.haiku))
+
+        let sent = try XCTUnwrap(payload(of: StubURLProtocol.requests[0].body)["lines"] as? [[String: Any]])
+        XCTAssertEqual(sent[0]["text"] as? String, "farts in general chat", "the command is not part of the text to translate")
+        XCTAssertEqual(sent[0]["emote"] as? Bool, true)
+        XCTAssertNil(sent[0]["sender"], "a name next to the action ends up inside the sentence")
+        XCTAssertNil(sent[0]["channel"], "nor does the channel belong in the sentence")
+        XCTAssertEqual(sent[1]["text"] as? String, "waves")
+        XCTAssertEqual(sent[1]["emote"] as? Bool, true)
+        XCTAssertEqual(sent[2]["text"] as? String, "LF tank /me pls")
+        XCTAssertNil(sent[2]["emote"])
+        XCTAssertEqual(sent[2]["sender"] as? String, "Thrall")
+
+        // Whatever the model does with the command or the marker, the reader sees the marker once.
+        XCTAssertEqual(result[lines[0].id]?.text, "(행동) 공개 채팅에서 방귀를 뀝니다")
+        XCTAssertEqual(result[lines[1].id]?.text, "(행동) 손을 흔듭니다")
+        XCTAssertEqual(result[lines[2].id]?.text, "탱커 구함")
+        XCTAssertEqual(TranslationPrompt.emoteTranslation("*dances*", reader: .english), "(action) dances")
+        XCTAssertEqual(TranslationPrompt.emoteTranslation("/me", reader: .korean), "(행동) /me")
+
+        let prompt = TranslationPrompt.system
+        XCTAssertTrue(prompt.contains("\"emote\": true"))
+        XCTAssertTrue(prompt.contains("A readable foreign sentence is never returned as it is."))
+
+        StubURLProtocol.install { _, _ in .init(json: claudeResponse(text: translations([(1, "하품을 합니다")], note: "하품하는 행동입니다."))) }
+        let again = try await makeTranslator().retranslate(lines[1], previous: nil, context: context(.opus))
+        XCTAssertEqual(again.text, "(행동) 하품을 합니다")
+    }
+
+    /// [Links] are copied, not translated: their names are not looked up, and a link the model
+    /// rewrote all the same is put back.
+    func testLinksAreKeptAsWritten() async throws {
+        XCTAssertEqual(LLMTranslator.withoutLinks("WTS [Arcanite Bar] 45g, [Black Lotus] 120g pst"), "WTS   45g,   120g pst")
+        XCTAssertEqual(LLMTranslator.withoutLinks("no links here"), "no links here")
+        XCTAssertEqual(LLMTranslator.withoutLinks("[H] guild [open bracket"), "  guild [open bracket")
+        XCTAssertEqual(LLMTranslator.withoutLinks("a [b [c] d"), "a [b   d")
+
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "[아케이나이트 주괴] 팝니다", from: "WTS [Arcanite Bar]"), "[Arcanite Bar] 팝니다")
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "[Arcanite Bar] 팝니다", from: "WTS [Arcanite Bar]"), "[Arcanite Bar] 팝니다")
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "[A] 팝니다, [비] 삽니다", from: "WTS [A] WTB [B]"), "[A] 팝니다, [B] 삽니다")
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "[비] 삽니다, [A] 팝니다", from: "WTS [A] WTB [B]"), "[B] 삽니다, [A] 팝니다")
+        // Nothing to pair up without guessing: left as the model wrote it.
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "아케이나이트 주괴 팝니다", from: "WTS [Arcanite Bar]"), "아케이나이트 주괴 팝니다")
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "[가] [나] [다]", from: "WTS [A] [B]"), "[가] [나] [다]")
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "탱커 구함 [급구]", from: "LF tank"), "탱커 구함 [급구]")
+
+        StubURLProtocol.install { _, _ in .init(json: claudeResponse(text: translations([(1, "[달의 강철 브로드소드] 파실 분 계신가요?")]))) }
+        let line = message("ANYONE GOT [Moonsteel Broadsword] TO SELL", channel: .publicChannel, label: "2. 거래")
+        let result = try await makeTranslator().translateIncoming([line], context: context(.haiku))
+        XCTAssertEqual(result[line.id]?.text, "[Moonsteel Broadsword] 파실 분 계신가요?")
+        XCTAssertEqual(glossary.askedFor, [["ANYONE GOT   TO SELL"]], "a link's name is not offered as a glossary hint")
+        XCTAssertTrue(TranslationPrompt.system.contains("\"WTS [Arcanite Bar]\" is \"[Arcanite Bar] 팝니다\""))
+    }
+
+    /// Live checks: handed lines of four channels in one request, the model began every
+    /// translation with the line's channel, whatever the prompt says. The channel stands in
+    /// front of the line already, so that prefix is taken off - and only that: a label the
+    /// speaker wrote, or a first word that names something else, stays.
+    func testChannelNameInFrontOfATranslationIsTakenOff() async throws {
+        let general = message("mage here, anyone need port to IF or SW? 50s", channel: .publicChannel, label: "1. 공개 - 스톰윈드")
+        for leaked in ["스톰윈드 공개: 마법사 있어요", "공개(스톰윈드): 마법사 있어요", "스톰윈드: 마법사 있어요", "[1. 공개 - 스톰윈드]: 마법사 있어요",
+                       "공개 채널: 마법사 있어요", "공개：마법사 있어요"] {
+            XCTAssertEqual(TranslationPrompt.withoutChannelPrefix(leaked, for: general), "마법사 있어요", leaked)
+        }
+        let cases: [(ChatChannel, String?, String)] = [(.guild, "길드", "길드: 화 많이 났어요?"), (.party, "파티", "파티: 금방 올게요"),
+                                                      (.yell, nil, "외침: 다르나서스 차원문 구합니다"), (.raid, "공격대", "공격대: 전멸"),
+                                                      (.whisper, nil, "귓속말: 고마워요"), (.guild, "Guild", "Guild: are you angry?")]
+        for (channel, label, leaked) in cases {
+            let line = message("some words that were said", channel: channel, label: label)
+            XCTAssertEqual(TranslationPrompt.withoutChannelPrefix(leaked, for: line),
+                           String(leaked[leaked.index(after: leaked.firstIndex(of: ":")!)...]).trimmingCharacters(in: .whitespaces), leaked)
+        }
+        // Not a name of this line's channel, a label of the speaker's own, or no label at all.
+        let guild = message("selling two stacks of linen")
+        for kept in ["파티: 아마포 두 묶음 팝니다", "아마포 두 묶음 팝니다", "팝니다: 아마포 두 묶음", "길드:", "길드 모집 중입니다: 귓 주세요",
+                     "아주 긴 문장이라서 쌍점이 스물여덟 글자보다 훨씬 뒤에 나옵니다: 길드"] {
+            XCTAssertEqual(TranslationPrompt.withoutChannelPrefix(kept, for: guild), kept, kept)
+        }
+        let labelled = message("guild: we are recruiting healers")
+        XCTAssertEqual(TranslationPrompt.withoutChannelPrefix("길드: 힐러 모집합니다", for: labelled), "길드: 힐러 모집합니다")
+        let notice = message("anything", channel: .unknown, label: nil)
+        XCTAssertEqual(TranslationPrompt.withoutChannelPrefix("길드: 무엇이든", for: notice), "길드: 무엇이든")
+
+        StubURLProtocol.install { _, _ in
+            .init(json: claudeResponse(text: translations([(1, "스톰윈드 공개: 마법사 있어요, 차원문 필요하신 분? 50실버"), (2, "길드: 화 많이 났어요?")])))
+        }
+        let second = message("anger issues much?")
+        let result = try await makeTranslator().translateIncoming([general, second], context: context(.haiku))
+        XCTAssertEqual(result[general.id]?.text, "마법사 있어요, 차원문 필요하신 분? 50실버")
+        XCTAssertEqual(result[second.id]?.text, "화 많이 났어요?")
+    }
+
+    /// Two links the model rewrote AND turned around, as Korean word order does to "my X for
+    /// your Y": each goes back where its own name stands, not where it stood in the source.
+    /// Without the names nothing but the order is left to go by.
+    func testRewrittenLinksGoBackByNameWhenTheSentenceTurnsThemAround() {
+        let names = ["arcanite bar": ["아케이나이트 주괴", "Arcanite Bar"], "black lotus": ["검은 연꽃", "Black Lotus"]]
+        var asked: [String] = []
+        let lookup: (String) -> [String] = { link in
+            asked.append(link)
+            return names[link.lowercased()] ?? []
+        }
+        let source = "WTT my [Arcanite Bar] for your [Black Lotus]"
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "[검은 연꽃] 주시면 [아케이나이트 주괴] 드립니다", from: source, counterparts: lookup),
+                       "[Black Lotus] 주시면 [Arcanite Bar] 드립니다")
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "[아케이나이트 주괴]를 [검은연꽃]과 교환합니다", from: source, counterparts: lookup),
+                       "[Arcanite Bar]를 [Black Lotus]과 교환합니다")
+        // One of the two is known by name: the other is the one that is left.
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "[검은 연꽃] 주시면 [아케 주괴] 드립니다", from: source, counterparts: lookup),
+                       "[Black Lotus] 주시면 [Arcanite Bar] 드립니다")
+        // Neither is: in order, as before.
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "[가] 주시면 [나] 드립니다", from: source, counterparts: lookup),
+                       "[Arcanite Bar] 주시면 [Black Lotus] 드립니다")
+        // A single rewritten link needs no name to be placed, and none is looked up.
+        asked = []
+        XCTAssertEqual(TranslationPrompt.restoringLinks(in: "[달의 강철 브로드소드] 파실 분 계신가요?", from: "ANYONE GOT [Moonsteel Broadsword] TO SELL",
+                                                        counterparts: lookup), "[Moonsteel Broadsword] 파실 분 계신가요?")
+        XCTAssertEqual(asked, [])
+    }
+
+    /// Wording that live checks showed the configured model to need (see `--translate-check`).
+    func testPromptTellsTravellingFromAskingForAPortal() {
+        let prompt = TranslationPrompt.system
+        XCTAssertTrue(prompt.contains("\"need port to X\", \"LF port X\": \"X 차원문 구합니다\""))
+        XCTAssertTrue(prompt.contains("\"X 차원문 열어 주실 분 계신가요?\" - the speaker is the one who wants it"))
+        XCTAssertTrue(prompt.contains("\"need to port to X brb\""), "the speaker travelling is told apart from a request")
+        XCTAssertTrue(prompt.contains("\"anyone want to tank free?\": \"공짜로 탱 서 주실 분?\""))
+        XCTAssertTrue(prompt.contains("\"port to IF or SW\": \"아이언포지나 스톰윈드 차원문\""))
+        XCTAssertTrue(prompt.contains("\"trash healer\""))
+        XCTAssertTrue(prompt.contains("\"inv Deathknight and Bigdps pls\" is \"Deathknight, Bigdps 초대해 주세요\""),
+                      "a name that is also a game word stays a name")
+        XCTAssertTrue(prompt.contains("is a price in silver, not a level range"))
+        XCTAssertTrue(prompt.contains("A player named in it keeps the name as written"), "also inside a typed emote")
+        XCTAssertFalse(prompt.contains("\").."), "no doubled full stop behind the bracket")
+        XCTAssertTrue(prompt.contains("\"all classes accepted for carry\": \"전 직업 버스 태워 드립니다\""),
+                      "an advert that takes people along is worded as an offer")
+    }
+
+    /// Wording the live checks against the configured model depend on.
+    func testPromptAsksForKoreanSentenceShapesAndPlainWords() throws {
+        let prompt = TranslationPrompt.system
+        XCTAssertTrue(prompt.contains("\"X 파실 분 계신가요?\""))
+        XCTAssertTrue(prompt.contains("\"팝니다 있는 분\""), "the stacked ending is named as the thing to avoid")
+        XCTAssertTrue(prompt.contains("LGBT 성소수자"))
+        XCTAssertTrue(prompt.contains("Everyday language is translated, not kept."))
+        XCTAssertTrue(prompt.contains("write one, never the parentheses"))
+        XCTAssertTrue(prompt.contains("\"LFW tailor\": \"재봉 제작해 드립니다\""))
+        XCTAssertTrue(prompt.contains("{\"translations\": [{\"n\": 1, \"text\": \"...\"}], \"note\": \"\"}"), "the output contract is unchanged")
+    }
+
     func testSystemPromptIsStableAndLongEnoughToCache() async throws {
         // ~3 characters per token for this mixed text: 9,000 characters clears every model's
         // minimum cacheable prefix on the 5.5 generation with a wide margin.

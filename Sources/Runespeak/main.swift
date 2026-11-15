@@ -16,6 +16,14 @@ if CommandLine.arguments.contains("--pipeline-selftest") {
     Task { @MainActor in exit(await PipelineSelfTest.run()) }
     dispatchMain()
 }
+if CommandLine.arguments.contains("--replay-image") {
+    Task { exit(await ReplayImage.run()) }
+    dispatchMain()
+}
+if CommandLine.arguments.contains("--translate-check") {
+    Task { exit(await TranslateCheck.run()) }
+    dispatchMain()
+}
 
 // The process starts on the main thread; the delegate has to outlive `run()`.
 MainActor.assumeIsolated {

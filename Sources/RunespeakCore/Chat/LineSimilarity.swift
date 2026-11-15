@@ -130,6 +130,15 @@ struct LineKey: Hashable {
         }
     }
 
+    /// The key of a row that could not be read at all: it resembles nothing, not even the
+    /// same row in another frame. `serial` tells such keys apart.
+    init(unreadable serial: UInt32) {
+        tag = []
+        name = []
+        body = [0x10FFFF, 0x10FFFE, 0x110000 &+ serial]
+        hasHeader = false
+    }
+
     var count: Int { tag.count + name.count + body.count }
     var whole: [UInt32] { tag + name + body }
 }
@@ -162,7 +171,9 @@ enum LineSimilarity {
         if a == b { return .strict(1) }
         if abs(a.count - b.count) > looseLimit(n) + 2 { return .none }
 
-        if a.hasHeader && b.hasHeader {
+        // A header whose name group was lost to OCR has the name in its body: compared part by
+        // part it would look like another line altogether.
+        if a.hasHeader && b.hasHeader && a.name.isEmpty == b.name.isEmpty {
             guard let c = part(a.body, b.body) else { return .none }
             let longBody = min(a.body.count, b.body.count) >= 6
             let t = part(a.tag, b.tag)

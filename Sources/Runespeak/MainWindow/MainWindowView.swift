@@ -305,8 +305,9 @@ private struct MainWindowHistoryRow: View, Equatable {
         if let tag = OverlayChatFormat.channelTag(for: entry.message) {
             prefix = prefix + Text("[\(tag)] ").foregroundColor(chatColor)
         }
-        if let sender = entry.message.sender, !sender.isEmpty {
-            prefix = prefix + Text("\(sender): ").fontWeight(.semibold).foregroundColor(chatColor)
+        let sender = ChatDisplay.senderPrefix(for: entry.message)
+        if !sender.isEmpty {
+            prefix = prefix + Text(sender).fontWeight(.semibold).foregroundColor(chatColor)
         }
         switch entry.state {
         case .translated(let text):

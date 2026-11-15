@@ -16,6 +16,9 @@ final class FrameProcessor {
     private var lastFrame: OCRFrame?
     private var repeatsLeft = 0
     private(set) var ocrRuns = 0
+    /// For the messages the latest `process` returned that say again what earlier ones said
+    /// in part (`ChatTracker.corrections`): the ids of those earlier messages.
+    private(set) var corrections: [UUID: [UUID]] = [:]
 
     init(recognizer: TextRecognizing, locale: ClientLocale) {
         self.recognizer = recognizer
@@ -24,18 +27,25 @@ final class FrameProcessor {
     }
 
     func process(_ image: CGImage, now: Date) async throws -> [ChatMessage] {
+        corrections = [:]
         let fingerprint = VisionTextRecognizer.fingerprint(image)
         if fingerprint == lastFingerprint, let frame = lastFrame {
             guard repeatsLeft > 0 else { return [] }
             repeatsLeft -= 1
-            return tracker.ingest(frame, now: now)
+            return ingest(frame, now: now)
         }
         let frame = try await recognizer.recognize(image, clientLocale: locale)
         ocrRuns += 1
         lastFingerprint = fingerprint
         lastFrame = frame
         repeatsLeft = Self.settleFrames
-        return tracker.ingest(frame, now: now)
+        return ingest(frame, now: now)
+    }
+
+    private func ingest(_ frame: OCRFrame, now: Date) -> [ChatMessage] {
+        let messages = tracker.ingest(frame, now: now)
+        corrections = tracker.corrections
+        return messages
     }
 }
 
@@ -54,14 +64,16 @@ final class CaptureLoop: @unchecked Sendable {
     private let recognizer: TextRecognizing
     private let config: @MainActor () -> Config
     private let onStatus: @MainActor (PipelineStatus) -> Void
-    private let onMessages: @MainActor ([ChatMessage], Int) -> Void
+    /// New messages, the earlier messages some of them stand in for (by the new message's
+    /// id, see `ChatTracker.corrections`), and the generation they belong to.
+    private let onMessages: @MainActor ([ChatMessage], [UUID: [UUID]], Int) -> Void
     private let onError: @Sendable (String) -> Void
     private var task: Task<Void, Never>?
 
     init(capturer: ChatCapturing, recognizer: TextRecognizing,
          config: @escaping @MainActor () -> Config,
          onStatus: @escaping @MainActor (PipelineStatus) -> Void,
-         onMessages: @escaping @MainActor ([ChatMessage], Int) -> Void,
+         onMessages: @escaping @MainActor ([ChatMessage], [UUID: [UUID]], Int) -> Void,
          onError: @escaping @Sendable (String) -> Void) {
         self.capturer = capturer
         self.recognizer = recognizer
@@ -128,10 +140,11 @@ final class CaptureLoop: @unchecked Sendable {
                     captureFailures = 0
                     do {
                         let messages = try await processor!.process(image, now: Date())
+                        let corrections = processor!.corrections
                         failures = 0
                         if Task.isCancelled { return }
                         await onStatus(.running)
-                        if !messages.isEmpty { await onMessages(messages, generation) }
+                        if !messages.isEmpty { await onMessages(messages, corrections, generation) }
                     } catch {
                         failures += 1
                         // One bad frame is nothing; a run of them is worth telling the user.

@@ -35,6 +35,8 @@ enum SyntheticChat {
         var channel: String
         var channelColor: RGBColor
         var segments: [Segment]
+        /// A wrapped row of the message above: drawn a little to the right, as the game does.
+        var wrapped = false
         var text: String { segments.map(\.text).joined() }
 
         init(_ language: String, _ channel: String, _ color: RGBColor, _ text: String) {
@@ -68,6 +70,18 @@ enum SyntheticChat {
         var background: Background
         var edge: Edge
         var label: String { "\(fontName) \(Int(pointSize))pt @\(Int(scale))x \(background.rawValue)/\(edge.rawValue)" }
+    }
+
+    /// Text of the game world showing through the chat window: the name floating over a
+    /// character that stands behind it. Drawn under the chat, larger and outlined.
+    struct WorldText {
+        var text: String
+        var color: RGBColor
+        /// Chat row it shares a baseline with, and where it starts, in points from the right end
+        /// of that row's text (negative: the two overlap).
+        var row: Int
+        var gap: CGFloat
+        var sizeFactor: CGFloat = 1.25
     }
 
     struct Rendered {
@@ -148,7 +162,7 @@ enum SyntheticChat {
 
     /// `canvasPoints` fixes the picture size (lines that do not fit are clipped, as in a real
     /// chat window); nil sizes the picture to the text.
-    static func render(lines: [Line], style: Style, canvasPoints: CGSize? = nil) -> Rendered? {
+    static func render(lines: [Line], style: Style, canvasPoints: CGSize? = nil, world: [WorldText] = []) -> Rendered? {
         let s = style.scale
         let font = CTFontCreateWithName(style.fontName as CFString, style.pointSize * s, nil)
         let lineHeight = ceil(style.pointSize * 1.3 * s)
@@ -173,26 +187,44 @@ enum SyntheticChat {
         ctx.setAllowsFontSmoothing(false)
         ctx.setShouldAntialias(true)
 
-        var boxes: [CGRect] = []
-        for (i, l) in ctLines.enumerated() {
+        // The game indents wrapped rows by a fixed step of about 0.4 line heights.
+        let indent = (0.42 * lineHeight).rounded()
+        func geometry(_ i: Int) -> (x: CGFloat, baselineY: CGFloat, width: CGFloat, ascent: CGFloat, descent: CGFloat) {
             var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
-            let w = CGFloat(CTLineGetTypographicBounds(l.fill, &ascent, &descent, &leading))
+            let w = CGFloat(CTLineGetTypographicBounds(ctLines[i].fill, &ascent, &descent, &leading))
             let top = margin + CGFloat(i) * lineHeight
             // CoreGraphics origin is bottom-left.
             let baselineY = CGFloat(height) - top - ascent - (lineHeight - ascent - descent) / 2
+            return (margin + (lines[i].wrapped ? indent : 0), baselineY, w, ascent, descent)
+        }
+
+        for item in world where lines.indices.contains(item.row) {
+            let g = geometry(item.row)
+            let big = CTFontCreateWithName(style.fontName as CFString, style.pointSize * s * item.sizeFactor, nil)
+            let label = Line("", "", item.color, item.text)
+            ctx.setLineJoin(.round)
+            ctx.textPosition = CGPoint(x: g.x + g.width + item.gap * s, y: g.baselineY)
+            CTLineDraw(attributed(label, font: big, mode: .stroke(width: 2 * s)), ctx)
+            ctx.textPosition = CGPoint(x: g.x + g.width + item.gap * s, y: g.baselineY)
+            CTLineDraw(attributed(label, font: big, mode: .fill), ctx)
+        }
+
+        var boxes: [CGRect] = []
+        for (i, l) in ctLines.enumerated() {
+            let g = geometry(i)
             switch style.edge {
             case .shadow:
-                ctx.textPosition = CGPoint(x: margin + s, y: baselineY - s)
+                ctx.textPosition = CGPoint(x: g.x + s, y: g.baselineY - s)
                 CTLineDraw(l.dark, ctx)
             case .outline:
                 ctx.setLineJoin(.round)
-                ctx.textPosition = CGPoint(x: margin, y: baselineY)
+                ctx.textPosition = CGPoint(x: g.x, y: g.baselineY)
                 CTLineDraw(l.stroke, ctx)
             }
-            ctx.textPosition = CGPoint(x: margin, y: baselineY)
+            ctx.textPosition = CGPoint(x: g.x, y: g.baselineY)
             CTLineDraw(l.fill, ctx)
-            let boxTop = CGFloat(height) - (baselineY + ascent)
-            boxes.append(CGRect(x: margin, y: boxTop, width: w, height: ascent + descent))
+            let boxTop = CGFloat(height) - (g.baselineY + g.ascent)
+            boxes.append(CGRect(x: g.x, y: boxTop, width: g.width, height: g.ascent + g.descent))
         }
         guard let image = ctx.makeImage() else { return nil }
         return Rendered(image: image, lines: lines, boxes: boxes, style: style)

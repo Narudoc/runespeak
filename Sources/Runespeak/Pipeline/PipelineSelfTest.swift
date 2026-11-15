@@ -237,7 +237,14 @@ enum PipelineSelfTest {
 
         func take(_ messages: [ChatMessage]) {
             for message in messages {
-                emitted.append(message)
+                // A message that says an earlier one again takes its place, as in the app.
+                let earlier = processor.corrections[message.id] ?? []
+                if let first = emitted.firstIndex(where: { earlier.contains($0.id) }) {
+                    emitted[first] = message
+                    emitted.removeAll { earlier.contains($0.id) }
+                } else {
+                    emitted.append(message)
+                }
                 if TranslationPolicy.shouldTranslate(message, settings: settings) {
                     states[message.id] = .pending
                     queued.insert(message.id)

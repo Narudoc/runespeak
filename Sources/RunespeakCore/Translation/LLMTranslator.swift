@@ -71,7 +71,7 @@ public class LLMTranslator: Translating, @unchecked Sendable {
 
     public func translateIncoming(_ messages: [ChatMessage], context: TranslationRequestContext) async throws -> [UUID: TranslationOutput] {
         if messages.isEmpty { return [:] }
-        let hints = glossary.hints(for: messages.map(\.body))
+        let hints = glossary.hints(for: messages.map { Self.withoutLinks($0.body) })
         let lines = messages.enumerated().map { TranslationPrompt.line($0.offset + 1, from: $0.element) }
         let user = TranslationPrompt.userMessage(task: .incoming, reader: context.reader, flavor: context.flavor,
                                                  hints: hints, recent: context.recent, lines: lines)
@@ -79,7 +79,14 @@ public class LLMTranslator: Translating, @unchecked Sendable {
 
         var result: [UUID: TranslationOutput] = [:]
         for (index, message) in messages.enumerated() {
-            guard let text = reply.lines[index + 1].map(Self.singleLine), !text.isEmpty else { continue }
+            guard var text = reply.lines[index + 1].map(Self.singleLine), !text.isEmpty else { continue }
+            text = TranslationPrompt.restoringLinks(in: text, from: message.body, counterparts: counterparts)
+            if lines[index].emote {
+                text = TranslationPrompt.emoteTranslation(text, reader: context.reader)
+            } else {
+                text = TranslationPrompt.withoutChannelPrefix(text, for: message)
+            }
+            if text.isEmpty { continue }
             result[message.id] = TranslationOutput(text: text)
         }
         if result.isEmpty {
@@ -89,14 +96,22 @@ public class LLMTranslator: Translating, @unchecked Sendable {
     }
 
     public func retranslate(_ message: ChatMessage, previous: String?, context: TranslationRequestContext) async throws -> TranslationOutput {
-        let hints = glossary.hints(for: [message.body])
+        let hints = glossary.hints(for: [Self.withoutLinks(message.body)])
+        let line = TranslationPrompt.line(1, from: message)
         let user = TranslationPrompt.userMessage(task: .retranslate, reader: context.reader, flavor: context.flavor,
                                                  previous: previous, hints: hints, recent: context.recent,
-                                                 lines: [TranslationPrompt.line(1, from: message)])
+                                                 lines: [line])
         let reply = try await complete(user: user, model: context.model, profile: .careful, expectedLines: 1)
-        guard let text = reply.lines[1].map(Self.singleLine), !text.isEmpty else {
+        guard var text = reply.lines[1].map(Self.singleLine), !text.isEmpty else {
             throw TranslationError.badResponse(reply.truncated ? "응답이 중간에 끊겼습니다" : "번역 결과가 비어 있습니다")
         }
+        text = TranslationPrompt.restoringLinks(in: text, from: message.body, counterparts: counterparts)
+        if line.emote {
+            text = TranslationPrompt.emoteTranslation(text, reader: context.reader)
+        } else {
+            text = TranslationPrompt.withoutChannelPrefix(text, for: message)
+        }
+        if text.isEmpty { throw TranslationError.badResponse("번역 결과가 비어 있습니다") }
         let note = reply.note.map(Self.singleLine).flatMap { $0.isEmpty ? nil : $0 }
         return TranslationOutput(text: text, note: note)
     }
@@ -116,6 +131,43 @@ public class LLMTranslator: Translating, @unchecked Sendable {
             throw TranslationError.badResponse(reply.truncated ? "응답이 중간에 끊겼습니다" : "번역 결과가 비어 있습니다")
         }
         return line
+    }
+
+    // MARK: - Hint lookup
+
+    /// The official names of the thing a link names, in both languages (for telling which
+    /// link a rewritten one was, see `TranslationPrompt.restoringLinks`).
+    private func counterparts(of link: String) -> [String] {
+        func name(_ entry: String) -> String {
+            // "Undercity | UC": the official name stands in front of the bar.
+            (entry.split(separator: "|").first.map(String.init) ?? entry).trimmingCharacters(in: .whitespaces)
+        }
+        let wanted = link.lowercased()
+        return glossary.hints(for: [link]).names.flatMap { pair -> [String] in
+            let ko = name(pair.korean), en = name(pair.english)
+            return ko.lowercased() == wanted || en.lowercased() == wanted ? [ko, en] : []
+        }
+    }
+    private var counterparts: (String) -> [String] { { [unowned self] in self.counterparts(of: $0) } }
+
+    /// Incoming text without its [item / spell links]. A link is copied into the translation as
+    /// it stands, so its name must not be looked up: an official counterpart among the hints
+    /// reads as an order to translate the link after all.
+    static func withoutLinks(_ text: String) -> String {
+        var out = ""
+        var rest = Substring(text)
+        while let open = rest.firstIndex(of: "[") {
+            let inside = rest[rest.index(after: open)...]
+            guard let close = inside.firstIndex(where: { $0 == "]" || $0 == "[" }), inside[close] == "]",
+                  rest.distance(from: open, to: close) <= 80 else {
+                out += rest[...open]
+                rest = inside
+                continue
+            }
+            out += rest[..<open] + " "
+            rest = inside[inside.index(after: close)...]
+        }
+        return out + rest
     }
 
     // MARK: - Output hygiene

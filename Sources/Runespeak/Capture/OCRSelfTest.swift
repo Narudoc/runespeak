@@ -169,6 +169,8 @@ enum OCRSelfTest {
         print("")
 
         if !fingerprintBehaves() { failures.append("fingerprint가 같은/다른 화면을 구분하지 못합니다") }
+        failures += worldTextFailures(recognizer, dumpDir: dumpDir)
+        failures += wrappedLinkFailures(recognizer, dumpDir: dumpDir)
 
         if failures.isEmpty {
             print("결과: 통과")
@@ -186,6 +188,213 @@ enum OCRSelfTest {
     ]
     private static let structureThreshold = 0.93
     private static let colorThreshold = 0.97
+
+    /// A wrapped message under a header row with a class-coloured name, with names of the game
+    /// world (and a row of chat tab labels) showing through the window: the world text must not
+    /// end up in the chat, and the message must come out whole, under its full sender name.
+    private static func worldTextFailures(_ recognizer: VisionTextRecognizer, dumpDir: URL?) -> [String] {
+        typealias Line = SyntheticChat.Line
+        typealias Segment = SyntheticChat.Segment
+        let pink = SyntheticChat.Palette.channel
+        let gold = RGBColor(r: 1, g: 0.82, b: 0)
+        let green = RGBColor(r: 0, g: 1, b: 0)
+        func header(_ name: String, _ body: String) -> Line {
+            Line("en", "channel", pink, segments: [
+                Segment(text: "[1. 공개 - 도시] [", color: pink),
+                Segment(text: name, color: SyntheticChat.Palette.mageName),
+                Segment(text: "]: " + body, color: pink),
+            ])
+        }
+        func wrapped(_ text: String) -> Line {
+            var line = Line("en", "channel", pink, text)
+            line.wrapped = true
+            return line
+        }
+        let lines: [Line] = [
+            Line("ko", "system", gold, "일반"),
+            Line("ko", "system", SyntheticChat.Palette.system, "규칙을 지키며 즐겁게 플레이하시기 바랍니다."),
+            header("Lorem Dolor", "We're"),
+            wrapped("<The Example Guild> and we rule! Recruiting"),
+            wrapped("all for Leveling, Dungeoning, and Raiding."),
+            header("Tamsin Alder", "Dps Lf"),
+            wrapped("Stocks"),
+        ]
+        let world = [
+            SyntheticChat.WorldText(text: "전투", color: gold, row: 0, gap: 40, sizeFactor: 1),
+            SyntheticChat.WorldText(text: "Trade", color: gold, row: 0, gap: 110, sizeFactor: 1),
+            SyntheticChat.WorldText(text: "가나다 라마", color: green, row: 1, gap: 90),
+            SyntheticChat.WorldText(text: "<빵 장수>", color: green, row: 2, gap: -8),
+            // A player's name through the middle of a wrapped row, and one over the name group
+            // of a header row.
+            SyntheticChat.WorldText(text: "Mossy Example", color: RGBColor(r: 0.42, g: 0.42, b: 1), row: 4, gap: -190),
+            SyntheticChat.WorldText(text: "Quill Harrow", color: RGBColor(r: 0.42, g: 0.42, b: 1), row: 5, gap: -150),
+        ]
+        let style = SyntheticChat.Style(fontName: SyntheticChat.fontName(for: .koKR), pointSize: 16, scale: 2,
+                                        background: .darkPanel, edge: .shadow)
+        guard let rendered = SyntheticChat.render(lines: lines, style: style, canvasPoints: CGSize(width: 470, height: 160),
+                                                  world: world),
+              let frame = try? recognizer.recognizeSync(rendered.image, clientLocale: .koKR) else {
+            return ["세상 글자 겹침: 이미지를 만들거나 읽지 못했습니다"]
+        }
+        if let dumpDir { writePNG(rendered.image, to: dumpDir.appendingPathComponent("koKR_world_text.png")) }
+        let tracker = ChatTracker(clientLocale: .koKR)
+        var messages: [ChatMessage] = []
+        let start = Date()
+        for n in 0..<4 { messages += tracker.ingest(frame, now: start.addingTimeInterval(Double(n) * 0.7)) }
+
+        var failures: [String] = []
+        func fail(_ what: String) {
+            failures.append("세상 글자 겹침: \(what) — " + messages.map { "〈\($0.sender ?? "-")〉\($0.body)" }.joined(separator: " / "))
+        }
+        let chat = messages.filter { $0.channel == .publicChannel }
+        if messages.count != 3 || chat.count != 2 {
+            fail("메시지 3개(안내 1, 채팅 2)가 나와야 하는데 \(messages.count)개")
+        } else {
+            if chat[0].sender != "Lorem Dolor" || chat[1].sender != "Tamsin Alder" { fail("보낸 사람 이름이 다름") }
+            if !chat[0].body.hasPrefix("We're <The Example Guild>") || !chat[0].body.hasSuffix("all for Leveling, Dungeoning, and Raiding.") {
+                fail("줄바꿈된 메시지가 온전하지 않음")
+            }
+            if chat[1].body != "Dps Lf Stocks" { fail("둘째 메시지가 온전하지 않음") }
+        }
+        if messages.contains(where: { m in ["장수", "빵", "라마", "가나다", "일반", "전투", "Trade", "Mossy", "Quill", "Harrow"].contains { m.rawText.contains($0) } }) {
+            fail("채팅이 아닌 글자가 섞임")
+        }
+
+        // A hostile name, in the red a yell is written in, over the end of a channel header
+        // row: the channel tag tells that the row is no yell, so the red is not its own.
+        let hostile = [
+            header("Lorem Dolor", "any tips"),
+            wrapped("for leveling a warrior in these caves please?"),
+            header("Tamsin Alder", "Dps Lf Stocks"),
+        ]
+        let red = [SyntheticChat.WorldText(text: "Quill Harrow", color: RGBColor(r: 1, g: 0.16, b: 0.16), row: 0, gap: -120)]
+        if let scene = SyntheticChat.render(lines: hostile, style: style, canvasPoints: CGSize(width: 470, height: 80), world: red),
+           let read = try? recognizer.recognizeSync(scene.image, clientLocale: .koKR) {
+            if let dumpDir { writePNG(scene.image, to: dumpDir.appendingPathComponent("koKR_hostile_name.png")) }
+            let second = ChatTracker(clientLocale: .koKR)
+            var said: [ChatMessage] = []
+            for n in 0..<8 { said += second.ingest(read, now: start.addingTimeInterval(Double(n) * 0.7)) }
+            let shown = said.map { "〈\($0.sender ?? "-")〉\($0.body)" }.joined(separator: " / ")
+            if said.contains(where: { $0.rawText.contains("Quill") || $0.rawText.contains("Harrow") }) {
+                failures.append("세상 글자 겹침: 붉은 이름이 채팅에 섞임 — \(shown)")
+            }
+            if said.first?.sender != "Lorem Dolor" || !(said.first?.body.hasSuffix("for leveling a warrior in these caves please?") ?? false)
+                || said.last?.body != "Dps Lf Stocks" {
+                failures.append("세상 글자 겹침: 붉은 이름에 가린 메시지가 온전하지 않음 — \(shown)")
+            }
+        } else {
+            failures.append("세상 글자 겹침: 붉은 이름 화면을 만들거나 읽지 못했습니다")
+        }
+
+        // Names in colours that prove little by themselves (the grey of a dead or tapped unit,
+        // the white of a name plate) behind the end of a wrapped row and behind the few
+        // words of a header row: they show nothing of the row's colour and are made of name
+        // words, so they are cut all the same. A chat word in the row's own colour stays.
+        let quiet = [
+            header("Lorem Dolor", "any tips for leveling a"),
+            wrapped("warrior in these caves please?"),
+            header("Tamsin Alder", "Dps Lf Stocks"),
+        ]
+        let paleNames = [
+            SyntheticChat.WorldText(text: "Quill Harrow", color: RGBColor(r: 0.67, g: 0.67, b: 0.67), row: 1, gap: 10),
+            SyntheticChat.WorldText(text: "<Mossy Example>", color: RGBColor(r: 0.92, g: 0.92, b: 0.92), row: 2, gap: 10),
+        ]
+        if let scene = SyntheticChat.render(lines: quiet, style: style, canvasPoints: CGSize(width: 560, height: 80), world: paleNames),
+           let read = try? recognizer.recognizeSync(scene.image, clientLocale: .koKR) {
+            if let dumpDir { writePNG(scene.image, to: dumpDir.appendingPathComponent("koKR_pale_names.png")) }
+            let third = ChatTracker(clientLocale: .koKR)
+            var said: [ChatMessage] = []
+            for n in 0..<8 { said += third.ingest(read, now: start.addingTimeInterval(Double(n) * 0.7)) }
+            let shown = said.map { "〈\($0.sender ?? "-")〉\($0.body)" }.joined(separator: " / ")
+            if said.contains(where: { m in ["Quill", "Harrow", "Mossy", "Example"].contains { m.rawText.contains($0) } }) {
+                failures.append("세상 글자 겹침: 회색·흰색 이름이 채팅에 섞임 — \(shown)")
+            }
+            if said.count != 2 || said.first?.sender != "Lorem Dolor"
+                || said.first?.body != "any tips for leveling a warrior in these caves please?" || said.last?.body != "Dps Lf Stocks" {
+                failures.append("세상 글자 겹침: 회색·흰색 이름 옆의 메시지가 온전하지 않음 — \(shown)")
+            }
+        } else {
+            failures.append("세상 글자 겹침: 회색·흰색 이름 화면을 만들거나 읽지 못했습니다")
+        }
+        print("[세상 글자 겹침] 채팅 탭 이름·머리 위 이름이 비치는 화면: \(failures.isEmpty ? "통과" : "실패")\n")
+        return failures
+    }
+
+    /// Item links in their quality colours that wrap onto the next row: the words of a link at
+    /// the end of a row are chat in another colour, not text of the world, and must stay.
+    private static func wrappedLinkFailures(_ recognizer: VisionTextRecognizer, dumpDir: URL?) -> [String] {
+        typealias Line = SyntheticChat.Line
+        typealias Segment = SyntheticChat.Segment
+        let pink = SyntheticChat.Palette.channel
+        // The last two are the white of a common item and the grey of a poor one: colours
+        // that are told from text of the world by more than the colour itself, also on a
+        // wrapped row that has only a word or two behind the end of its link.
+        let qualities = [SyntheticChat.Palette.epic, SyntheticChat.Palette.legendary, RGBColor(r: 0.12, g: 1, b: 0),
+                         RGBColor(r: 1, g: 1, b: 1), RGBColor(r: 0.62, g: 0.62, b: 0.62)]
+        let cases: [(name: String, lead: String, linkHead: String, linkTail: String, rest: String)] = [
+            ("Odalys", "WTS cheap today ", "[Blade of Eternal", "Darkness]", " and also some cloth"),
+            ("Hexbloom", "Selling this ", "[Sulfuras, Hand of", "Ragnaros]", " to the best offer"),
+            ("Quillon", "have a spare ", "[Robe of the", "Archmage]", " whisper me if you need it"),
+            ("Mirelda", "anyone need some ", "[Heavy Linen", "Bandage]", " pst me"),
+            ("Aldric", "haha who wants my ", "[Cracked Leather", "Belt]", " for free"),
+        ]
+        var lines: [Line] = []
+        for (n, c) in cases.enumerated() {
+            lines.append(Line("en", "channel", pink, segments: [
+                Segment(text: "[2. 거래 - 도시] [\(c.name)]: " + c.lead, color: pink),
+                Segment(text: c.linkHead, color: qualities[n]),
+            ]))
+            var tail = Line("en", "channel", pink, segments: [
+                Segment(text: c.linkTail, color: qualities[n]),
+                Segment(text: c.rest, color: pink),
+            ])
+            tail.wrapped = true
+            lines.append(tail)
+        }
+        let style = SyntheticChat.Style(fontName: SyntheticChat.fontName(for: .koKR), pointSize: 16, scale: 2,
+                                        background: .darkPanel, edge: .shadow)
+        guard let rendered = SyntheticChat.render(lines: lines, style: style, canvasPoints: CGSize(width: 470, height: 230)),
+              let frame = try? recognizer.recognizeSync(rendered.image, clientLocale: .koKR) else {
+            return ["줄바꿈된 아이템 링크: 이미지를 만들거나 읽지 못했습니다"]
+        }
+        if let dumpDir { writePNG(rendered.image, to: dumpDir.appendingPathComponent("koKR_wrapped_links.png")) }
+        let tracker = ChatTracker(clientLocale: .koKR)
+        var messages: [ChatMessage] = []
+        let start = Date()
+        for n in 0..<4 { messages += tracker.ingest(frame, now: start.addingTimeInterval(Double(n) * 0.7)) }
+
+        var failures: [String] = []
+        let got = messages.map { "〈\($0.sender ?? "-")〉\($0.body)" }.joined(separator: " / ")
+        if messages.count != cases.count {
+            failures.append("줄바꿈된 아이템 링크: 메시지 \(cases.count)개가 나와야 하는데 \(messages.count)개 — \(got)")
+        } else {
+            for (n, (message, c)) in zip(messages, cases).enumerated() {
+                let want = c.lead + c.linkHead + " " + c.linkTail + c.rest
+                // Compared without case and spacing: this checks that no word went missing, not
+                // how well each glyph was read.
+                func fold(_ s: String) -> String { s.lowercased().filter { $0.isLetter } }
+                // A bracket in a pale colour is read as a thin letter at times ("Bandagel"):
+                // for the pale links one letter more or less is no missing word.
+                func oneLetterApart(_ a: String, _ b: String) -> Bool {
+                    let x = Array(a), y = Array(b)
+                    guard abs(x.count - y.count) <= 1 else { return false }
+                    var i = 0, j = 0, edits = 0
+                    while i < x.count, j < y.count {
+                        if x[i] == y[j] { i += 1; j += 1; continue }
+                        edits += 1
+                        if x.count > y.count { i += 1 } else if y.count > x.count { j += 1 } else { i += 1; j += 1 }
+                    }
+                    return edits + (x.count - i) + (y.count - j) <= 1
+                }
+                let whole = n < 3 ? fold(message.body) == fold(want) : oneLetterApart(fold(message.body), fold(want))
+                if message.sender != c.name || !whole {
+                    failures.append("줄바꿈된 아이템 링크: \(c.name)의 메시지가 온전하지 않음 — \(got)")
+                }
+            }
+        }
+        print("[줄바꿈된 아이템 링크] 품질 색 링크가 다음 줄로 넘어가는 화면: \(failures.isEmpty ? "통과" : "실패")\n")
+        return failures
+    }
 
     private static func fingerprintBehaves() -> Bool {
         let style = SyntheticChat.Style(fontName: SyntheticChat.fontName(for: .koKR), pointSize: 14, scale: 2,

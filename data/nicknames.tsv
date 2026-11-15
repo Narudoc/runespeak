@@ -6,7 +6,7 @@
 # here: they are senses in data/abbreviations.*.tsv, where a note can tell the meanings apart.
 # A two-letter ALL-CAPS alias (UC, TB), or one spelled like an everyday word, matches capitals only;
 # longer ALL-CAPS aliases (STV, UBRS) match in any case.
-# Rows: 100
+# Rows: 105
 korean	english	aliases
 # == Cities and towns ==
 스톰윈드	Stormwind City	SW, Stormwind
@@ -20,6 +20,11 @@ korean	english	aliases
 달라란	Dalaran	Dal, Dala
 가젯잔	Gadgetzan	Gadgetz
 희망의 빛 예배당	Light's Hope Chapel	LHC, Lights Hope, Light's Hope
+골드샤이어	Goldshire	Goldshire, Gold shire
+레이크샤이어	Lakeshire	Lakeshire, Lake shire
+다크샤이어	Darkshire	Darkshire, Dark shire
+사우스쇼어	Southshore	Southshore, South shore
+아스트라나르	Astranaar	Astranaar, Astranar
 # == Zones ==
 가시덤불 골짜기	Stranglethorn Vale	STV, Stranglethorn
 동부 역병지대	Eastern Plaguelands	EPL

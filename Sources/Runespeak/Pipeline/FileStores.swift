@@ -53,7 +53,7 @@ final class ChatHistory: @unchecked Sendable {
     }
 
     func append(translation: String, of message: ChatMessage) {
-        let who = message.sender.map { "\($0): " } ?? ""
+        let who = ChatDisplay.senderPrefix(for: message)
         write("[\(ErrorLog.stamp(Date()))]     → \(who)\(translation)")
     }
 

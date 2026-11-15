@@ -134,7 +134,9 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
                                    generation: self.generation)
             },
             onStatus: { [unowned self] status in self.setStatus(status) },
-            onMessages: { [unowned self] messages, generation in self.receive(messages, generation: generation) },
+            onMessages: { [unowned self] messages, corrections, generation in
+                self.receive(messages, replacing: corrections, generation: generation)
+            },
             onError: { ErrorLog.shared.write($0) })
 
         state.gameInView = gameIsInView()
@@ -388,7 +390,10 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
         }
     }
 
-    private func receive(_ messages: [ChatMessage], generation: Int) {
+    /// `corrections`: for a message that says again, whole, what earlier ones said while part
+    /// of the chat row could not be read, the ids of those earlier lines. It takes their place
+    /// in the list; a translation still on its way for one of them finds no line and is dropped.
+    private func receive(_ messages: [ChatMessage], replacing corrections: [UUID: [UUID]], generation: Int) {
         guard generation == self.generation else { return }
         let settings = state.settings
         var entries = state.entries
@@ -404,7 +409,7 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
             if TranslationPolicy.shouldTranslate(message, settings: settings), beginTranslation(of: &entry) {
                 toTranslate.append(message)
             }
-            entries.append(entry)
+            entries.place(entry, replacing: corrections[message.id] ?? [])
         }
         if entries.count > Self.historyLimit { entries.removeFirst(entries.count - Self.historyLimit) }
         state.entries = entries

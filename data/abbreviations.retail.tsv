@@ -1,14 +1,14 @@
 # Chat abbreviations and slang of the retail game.
 # Hand-written; the korean column holds the official Korean name (as in official_names.retail.tsv)
 # when english is an official name, otherwise the term Korean players use. Edit by hand.
-# Rows: 661
+# Rows: 669
 abbr	also	english	korean	note
 # Group finding and trade
-LFG		looking for group	파티 구함	a player wants to join a group; usually followed by their role, class or the content
+LFG		looking for group	파티 구함	a player wants to join a group; usually followed by their role, class or the content; a role or class right before or after it is the writer's own ('tank LFG', 'LFG tank' = a tank looking for a group), not a role wanted; only a role after 'need' later in the line is one that is missing ('LFG UBRS need healer' = '검은바위 첨탑 상층 파티 구함, 힐러 필요')
 LFM		looking for more	파티원 구함	a group leader is recruiting; usually followed by the roles still missing
-LF		looking for	구함	generic prefix, e.g. "LF tank", "LF guild"
+LF		looking for	구함	direction depends on word order: a role or class BEFORE LF is the writer, who wants to join ('dps LF stocks' = a damage dealer looking for a Stockade group, '딜러인데 ... 파티 구함'); a role AFTER LF is what a group wants ('LF dps stocks' = '... 딜러 구함'); roles on both sides ('2 dps LF tank SM') = those in front are already there, the one behind is wanted ('딜러 2명 있음, 수도원 탱커 구함'); otherwise the item, crafter or group wanted follows
 LF1M	LF2M,LF3M,LF4M	looking for N more players	N명 구함	the digit is how many players the group still needs
-LFW		looking for work	제작 주문 받음	a crafter advertising a profession in trade chat, e.g. "LFW JC"
+LFW		looking for work	제작해 드립니다	the writer IS the crafter and offers a profession service for tips or a fee ('LFW tailor' = '재봉 제작해 드립니다', 'LFW enchanter' = '마법부여 해 드립니다'); never '~ 구함'
 LFR		Raid Finder	공격대 찾기	the queued, easiest raid difficulty; occasionally just "looking for raid"
 WTS		want to sell	팝니다	trade chat prefix before an item, service or carry
 WTB		want to buy	삽니다	trade chat prefix before the item or service wanted
@@ -33,6 +33,7 @@ OS		off spec	부특성	gear for a spec the player is not currently playing, roll
 res	reserved	reserved	예약	in loot rules, an item that is already spoken for
 res	rez,rezz	resurrect	부활	as a request ("res pls") it asks to be brought back to life
 boost	carry,carries	paid carry	버스	strong players clear content for a buyer, sold for gold in trade chat
+carry	carried	being taken through content by stronger players	버스	often a paid service; an advert that takes people along ('X accepted for carry', 'X welcome for carry') = 'X도 버스 태워 드립니다'; the one who pays for a carry is 버스 손님
 pug	pugs,pugging	pick-up group	막공	a group of strangers rather than a guild or premade; also used as a verb
 premade		premade group	사전 구성 파티	a group formed before queueing, as opposed to random matchmaking
 exp	xp	experience	경험	in recruitment it means prior kills or rating ("need exp", "2.1k exp"); otherwise experience points
@@ -50,9 +51,9 @@ bench	benched	sit out	대기	a raider who is rostered but not in the group for t
 trial		trial raider	수습 공대원	a new guild recruit being evaluated
 AFK		away from keyboard	자리 비움	the player is not at the computer
 # Roles
-tank	tanks	tank	탱커	group role: the armoured player the enemies are supposed to hit; adverts count it apart from healers and damage dealers
-heals	healer,healz	healer	힐러	the healing role; "need heals" means a healer is missing
-dps	dd	damage dealer	딜러	the damage role; also the number "damage per second"
+tank	tanks	tank	탱커	group role: the armoured player the enemies are supposed to hit; adverts count it apart from healers and damage dealers; before LF or next to LFG it is the writer's own role; after LF, LFM, LF1M or need it is the role a group is missing; with roles on both sides of LF ('2 dps LF tank'), those in front are already in the group and the one behind is wanted
+heals	healer,healz	healer	힐러	the healing role; "need heals" means a healer is missing; before LF or next to LFG it is the writer's own role; after LF, LFM, LF1M or need it is the role a group is missing; with roles on both sides of LF ('2 dps LF tank'), those in front are already in the group and the one behind is wanted
+dps	dd	damage dealer	딜러	the damage role; also the number "damage per second"; before LF or next to LFG it is the writer's own role; after LF, LFM, LF1M or need it is the role a group is missing; with roles on both sides of LF ('2 dps LF tank'), those in front are already in the group and the one behind is wanted
 rdps		ranged damage dealer	원거리 딜러	a caster or hunter
 mdps		melee damage dealer	근접 딜러	a damage dealer who fights in melee range
 MT		main tank	메인 탱커	only in raid assignments; as a place it is Magisters' Terrace
@@ -182,6 +183,7 @@ trinket	trinkets	trinket	장신구	as a verb in PvP it means using the crowd-con
 prio		priority	우선순위	loot priority for a role or spec, or the enemy to kill first
 roll	rolls	loot roll	주사위	rolling dice for loot; "roll off" breaks a tie
 greed		Greed roll	차비	loot roll for gear you do not need; loses to Need
+need roll	rolled need, roll need, rolls need, rolling need, needed on, need before greed, need b4 greed, nbg	need roll	입찰	the high-priority loot roll; 'rolled need on X' = 'X에 입찰 굴림'; 'need before greed' = 입찰 우선
 ML		master looter	담당자 획득	one person hands out loot, mainly in old raids and loot-rule talk
 ML		The MOTHERLODE!!	왕노다지 광산!!	Battle for Azeroth dungeon, when listed among dungeons or keys
 tradeable	tradable	tradeable loot	거래 가능	loot that may be passed to a group member
@@ -284,7 +286,7 @@ spread	spread out	spread	산개	stand apart so effects do not hit several player
 soak	soaks,soaking	soak	같이 맞기	deliberately standing in a mechanic to share or absorb its damage
 bait	baiting	bait	유도	drawing a targeted mechanic to a chosen spot
 adds	add	additional enemies	쫄	extra enemies that join a boss fight
-trash		trash mobs	잡몹	ordinary enemies between bosses
+trash		trash mobs	잡몹	ordinary enemies between bosses; said of a player ('trash healer', 'trash guild') it is the plain insult, 형편없는 / 쓰레기, not 잡몹
 pack	packs	trash pack	무리	a group of trash pulled together
 cleave		cleave	광역 피해	damage that also hits targets near the main one; "2-target cleave"
 AoE		area of effect	광역	damage or healing that hits everything in an area
@@ -469,8 +471,8 @@ BG	BGs	battleground	전장
 RBG	RBGs	rated battleground	평점제 전장	ten-player rated team battleground
 blitz	BGB	Battleground Blitz	전장 대공세	eight-player rated solo-queue battleground
 shuffle	RSS,solo shuffle,SS	Solo Shuffle	1인 조합전	rated solo-queue 3v3 arena played in six rounds with shuffled teams
-2s	2v2,2's	2v2 arena	2대2 투기장	
-3s	3v3,3's	3v3 arena	3대3 투기장	
+2s	2v2,2's	2v2 arena	2대2 투기장	arena bracket, only when arena teams or rating are the topic; as a price ('for 2s', '2s each') it is 2 silver = 2실버
+3s	3v3,3's	3v3 arena	3대3 투기장	arena bracket, only when arena teams or rating are the topic; as a price ('for 3s', '3s each') it is 3 silver = 3실버
 arena	arenas	arena	투기장	
 CR		current rating	현재 평점	a number after it is the player's PvP rating; in a boss fight CR is combat resurrection
 MMR		matchmaking rating	매칭 점수	hidden rating that decides opponents and rating gains
@@ -531,6 +533,10 @@ omg		oh my god	헐
 ffs		for f***'s sake	아 진짜	frustration
 smh		shaking my head	절레절레	disapproval
 irl		in real life	현실에서	
+general chat	gen chat, general channel	the General channel of a zone or city	공개 채팅	channel 1, which a Korean client calls 공개 ('[1. 공개 - 스톰윈드]'): 'in general chat' = '공개 채팅에서'
+trade chat	trade channel	the Trade channel of the cities	거래 채팅	channel 2, which a Korean client calls 거래
+lfg chat	lfg channel	the LookingForGroup channel	파티찾기 채널	the channel a Korean client calls 파티찾기
+LGBT	LGBTQ, LGBTQ+, LGBTQIA+	sexual minorities	성소수자	guild and group adverts: 'LGBT friendly' = '성소수자 환영'; 'straights' = 이성애자
 atm		at the moment	지금은	
 rn		right now	지금	
 asap		as soon as possible	최대한 빨리	
@@ -538,6 +544,7 @@ btw		by the way	그런데
 afaik		as far as I know	내가 알기로는	
 iirc		if I recall correctly	내 기억으로는	
 fr		for real	진짜로	
+no cap	nocap, no kap	no lie	진짜임	internet slang: 'no cap' = 'I am not lying', 'for real'; nothing to do with capturing a base or a level cap
 tho		though	그래도	
 dc	dced,dc'd	disconnected	접속 끊김	a player dropped from the game
 lag	lagging	lag	렉	
@@ -579,6 +586,7 @@ kkk	kkkk,rsrs	laughter	ㅋㅋ	Brazilian Portuguese laughter
 pt		party	파티	Latin American shorthand for a group, e.g. "busco pt"
 # == Capital cities typed in lower case as often as in capitals ==
 SW		Stormwind City	스톰윈드	Alliance capital; "port to SW" asks a mage for a portal there
+Darn		Darnassus	다르나서스	night elf capital, when travel is the topic ('port to darn', 'boat to darn'); otherwise the mild curse
 UC		Undercity	언더시티	Horde capital of the Forsaken
 # == Russian ==
 ищу	ищем, ищет, ищут	looking for	구함	Russian: a group, a guild or a player is being sought

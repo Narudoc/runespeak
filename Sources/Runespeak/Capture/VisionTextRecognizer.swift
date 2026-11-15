@@ -44,6 +44,9 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         var rescue = true
         /// enUS only: also re-read lines the detection pass was unsure of (slow, no measured gain).
         var secondOpinionForUnsureLines = false
+        /// Cut words in another colour off the end of a chat row (text of the game world that
+        /// overlaps the chat window) and read a row damaged by them again without them.
+        var trimForeignTail = true
 
         init() {}
     }
@@ -128,6 +131,28 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
             }
         }
 
+        if options.trimForeignTail {
+            let all = lines
+            var rereads = 0
+            lines = lines.map { line in
+                // A link that wraps ("[Blade of Eternal" / "Darkness] ...") ends this row in the
+                // link's colour: that is chat, not text of the world.
+                if Self.endsInsideLink(line, among: all) { return line }
+                var line = line
+                if rereads < Self.maxWorldTextRereads {
+                    line = withoutWorldTextInside(line, pixels: pixels, clientLocale: clientLocale) { foreign, kept in
+                        rereads += 1
+                        return self.reread(line, without: foreign, keeping: kept, pixels: pixels, preprocess: preprocess,
+                                           upscale: upscale, languages: languages, autodetect: autodetect)
+                    }
+                }
+                return trimForeignTail(line, pixels: pixels, clientLocale: clientLocale) { foreign, kept in
+                    self.reread(line, without: foreign, keeping: kept, pixels: pixels, preprocess: preprocess,
+                                upscale: upscale, languages: languages, autodetect: autodetect)
+                }
+            }
+        }
+
         let result = lines
             .sorted { $0.box.minY < $1.box.minY }
             .compactMap { reading -> OCRLine? in
@@ -135,7 +160,7 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
                 line.glyphs = Self.tidy(line.glyphs)
                 let text = line.text
                 guard !text.isEmpty else { return nil }
-                let color = pixels.glyphColor(in: line.bodyRects()) ?? pixels.glyphColor(in: [line.box]) ?? .white
+                let color = line.ownColour ?? pixels.glyphColor(in: line.bodyRects()) ?? pixels.glyphColor(in: [line.box]) ?? .white
                 return OCRLine(text: text, box: line.box, color: color, confidence: line.confidence)
             }
         return OCRFrame(lines: result, imageSize: size)
@@ -185,6 +210,10 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         var glyphs: [Glyph]
         var box: CGRect
         var confidence: Double
+        /// Stands far to the right of other text on its row: not the start of a chat line.
+        var detached = false
+        /// Colour of the row's own text when it had to be told from something drawn over it.
+        var ownColour: RGBColor?
 
         var text: String {
             var s = ""
@@ -201,6 +230,9 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         func bodyRects() -> [CGRect] {
             var rects: [CGRect] = []
             var depth = 0
+            // Right end of the last bracketed word. Where a model reports word boxes only, the
+            // ":" of "[Name]:" has the extent of the whole word and must not start a run.
+            var bracketedUntil = -CGFloat.greatestFiniteMagnitude
             var run: (minX: CGFloat, maxX: CGFloat, letters: Int)? = nil
             func close() {
                 if let r = run, r.letters >= 2, r.maxX - r.minX >= 3 {
@@ -212,13 +244,17 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
                 if g.character == "[" {
                     if depth == 0 { close() }
                     depth += 1
+                    bracketedUntil = max(bracketedUntil, g.maxX)
                 } else if g.character == "]" {
                     depth = max(0, depth - 1)
-                } else if depth == 0 {
+                    bracketedUntil = max(bracketedUntil, g.maxX)
+                } else if depth > 0 {
+                    bracketedUntil = max(bracketedUntil, g.maxX)
+                } else if g.minX >= bracketedUntil - 1 {
                     let counts = g.character.isLetter || g.character.isNumber ? 1 : 0
                     if let r = run {
                         run = (min(r.minX, g.minX), max(r.maxX, g.maxX), r.letters + counts)
-                    } else {
+                    } else if counts > 0 {
                         run = (g.minX, g.maxX, counts)
                     }
                 }
@@ -399,6 +435,9 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
 
     /// Vision splits a visual line where it sees a wide gap (between a channel tag and the name,
     /// around an item link, at a script change). Joins fragments sharing a baseline, left to right.
+    /// Gap, in line heights, beyond which two fragments on one baseline are not one line.
+    static let wideGap: CGFloat = 2
+
     private static func mergeIntoLines(_ fragments: [Reading]) -> [Reading] {
         let sorted = fragments.sorted { $0.box.midY < $1.box.midY }
         var rows: [[Reading]] = []
@@ -421,9 +460,31 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
             rows.append([f])
         }
 
-        return rows.map { row -> Reading in
+        // Fragments of one chat line sit about a space apart. Across a wide gap they are different
+        // things: chat on the left and, say, the name over a character behind the chat window.
+        var groups: [[Reading]] = []
+        for row in rows {
+            var group: [Reading] = []
+            var right: CGFloat = 0, height: CGFloat = 0
+            for p in row.sorted(by: { $0.box.minX < $1.box.minX }) {
+                if !group.isEmpty, p.box.minX - right > wideGap * max(height, p.box.height) {
+                    groups.append(group)
+                    group = []
+                    var first = p
+                    first.detached = true
+                    group.append(first)
+                    right = p.box.maxX; height = p.box.height
+                    continue
+                }
+                group.append(p)
+                right = max(right, p.box.maxX); height = max(height, p.box.height)
+            }
+            groups.append(group)
+        }
+
+        return groups.map { row -> Reading in
             guard row.count > 1 else { return row[0] }
-            let parts = row.sorted { $0.box.minX < $1.box.minX }
+            let parts = row
             var merged = parts[0]
             var weighted = 0.0, weight = 0.0
             for (i, p) in parts.enumerated() {
@@ -445,12 +506,18 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
     private static func counterpart(of line: Reading, in candidates: [Reading]) -> Reading? {
         var best: Reading? = nil
         var bestOverlap: CGFloat = 0
+        var bestShared: CGFloat = 0
         for c in candidates {
             let overlap = min(c.box.maxY, line.box.maxY) - max(c.box.minY, line.box.minY)
-            if overlap > bestOverlap { bestOverlap = overlap; best = c }
+            guard overlap > min(c.box.height, line.box.height) * 0.5 else { continue }
+            // A baseline can hold two readings (see `mergeIntoLines`): the one covering the same
+            // stretch of it is the counterpart.
+            let shared = max(0, min(c.box.maxX, line.box.maxX) - max(c.box.minX, line.box.minX))
+            if best == nil || shared > bestShared || (shared == bestShared && overlap > bestOverlap) {
+                bestOverlap = overlap; bestShared = shared; best = c
+            }
         }
-        guard let found = best, bestOverlap > min(found.box.height, line.box.height) * 0.5 else { return nil }
-        return found
+        return best
     }
 
     /// Smallest region covering `lines`, padded so glyph edges are not cut.
@@ -525,6 +592,7 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         // It also drops accents, which now and then eats a bracket.
         var suspects = lines.indices.filter { i in
             let l = lines[i]
+            if l.detached { return false }
             if l.glyphs.isEmpty || !Self.bracketsBalanced(l.glyphs) { return true }
             return l.confidence < 0.9 && !Self.looksKorean(Self.untrustedPart(of: l))
         }
@@ -818,6 +886,317 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         out += o[cursor...]
         result.glyphs = out
         return result
+    }
+
+    // MARK: - Text of the world over a chat row
+
+    /// Glyph index ranges of the space-separated words of a reading.
+    private static func words(_ glyphs: [Glyph]) -> [Range<Int>] {
+        var out: [Range<Int>] = []
+        var start = 0
+        for i in glyphs.indices where i > 0 && glyphs[i].spaceBefore {
+            out.append(start..<i)
+            start = i
+        }
+        if start < glyphs.count { out.append(start..<glyphs.count) }
+        return out
+    }
+
+    private static func rect(of range: Range<Int>, in line: Reading) -> CGRect {
+        let minX = line.glyphs[range].map(\.minX).min() ?? line.box.minX
+        let maxX = line.glyphs[range].map(\.maxX).max() ?? line.box.maxX
+        return CGRect(x: minX, y: line.box.minY, width: maxX - minX, height: line.box.height)
+    }
+
+    /// True when the row right below `line` closes a bracket it never opened: `line` ends
+    /// inside a link that wraps, even if its own opening bracket was misread.
+    static func endsInsideLink(_ line: Reading, among lines: [Reading]) -> Bool {
+        let h = line.box.height
+        guard h > 0 else { return false }
+        let below = lines.filter {
+            !$0.detached && $0.box.midY > line.box.midY + 0.5 * h && $0.box.midY < line.box.midY + 1.8 * h
+                && abs($0.box.minX - line.box.minX) < 2.5 * h
+        }.min { $0.box.midY < $1.box.midY }
+        guard let next = below,
+              let first = next.glyphs.first(where: { $0.character == "[" || $0.character == "]" }) else { return false }
+        return first.character == "]"
+    }
+
+    /// Names floating over characters and other text of the game world show through the chat
+    /// window, and where they touch the end of a chat row OCR reads them as part of it. The text
+    /// of a chat message has one colour (links and names, which may differ, are bracketed), so
+    /// words at the end of a row in a clearly different colour are cut off.
+    ///
+    /// The overlap also damages the chat words under it. `reread` is asked for a second reading
+    /// with that colour erased, which replaces the first unless it is the worse of the two.
+    private func trimForeignTail(_ line: Reading, pixels: PixelBuffer, clientLocale: ClientLocale,
+                                 reread: ((_ foreign: RGBColor, _ kept: RGBColor) -> Reading?)?) -> Reading {
+        let words = Self.words(line.glyphs)
+        guard words.count >= 2 else { return line }
+        let parsed = ChatLineParser.parse(line.text, locale: clientLocale)
+
+        // The colour the row's text ought to have, and the first word that may be cut.
+        var reference: RGBColor?
+        var firstCuttable = 1
+        if parsed.hasPrefix {
+            let bodyWords = parsed.body.split(separator: " ").count
+            guard bodyWords >= 1, bodyWords < words.count, line.text.hasSuffix(parsed.body) else { return line }
+            let firstBody = words.count - bodyWords
+            // A channel tag is drawn in the colour of the message; a name may have its own.
+            if parsed.channelLabel != nil, line.glyphs[0].character == "[",
+               let close = line.glyphs.firstIndex(where: { $0.character == "]" }), close < words[firstBody].lowerBound {
+                reference = pixels.glyphColor(in: [Self.rect(of: 0..<(close + 1), in: line)])
+            }
+            if reference == nil { reference = pixels.glyphColor(in: [Self.rect(of: words[firstBody], in: line)]) }
+            firstCuttable = firstBody + 1
+        } else {
+            // A wrapped row of a chat message. System text is left alone: it mixes colours.
+            guard words.count >= 3 else { return line }
+            let head = words[0].lowerBound..<words[1].upperBound
+            guard let colour = pixels.glyphColor(in: [Self.rect(of: head, in: line)]),
+                  let channel = ChatColors.channel(for: colour), channel != .system, channel != .emote else { return line }
+            reference = colour
+            firstCuttable = 2
+        }
+        guard let kept = reference else { return line }
+        // The message text ends inside a link ("... [Blade of Eternal"): its last words have
+        // the link's colour and are chat.
+        let message = line.glyphs[(parsed.hasPrefix ? words[firstCuttable - 1].lowerBound : 0)...]
+        if message.last(where: { $0.character == "[" || $0.character == "]" })?.character == "[" { return line }
+
+        // Words are cut from the end for as long as they are drawn in another colour and show
+        // nothing of the row's own. A chat word half covered by world text still shows its
+        // own colour and stays.
+        //
+        // One vivid other colour (the blue, green, red and yellow of names) is proof by
+        // itself. Names are also drawn in white and grey (a name plate, a dead or tapped
+        // unit) and, where the client colours them by class, in hues the chat channels use:
+        // such a colour proves less, so the words must also be what a name over a character
+        // is made of (a few words of letters, a "<Guild>" tag).
+        var cut = words.count
+        var foreign: RGBColor?
+        var pale = false
+        while cut > firstCuttable {
+            let word = words[cut - 1]
+            if line.glyphs[word].contains(where: { $0.character == "[" || $0.character == "]" }) { break }
+            let rect = Self.rect(of: word, in: line)
+            guard let colour = pixels.glyphColor(in: [rect]) else { break }
+            let distance = PixelBuffer.chromaDistance(colour, kept)
+            let vivid = max(colour.r, colour.g, colour.b) - min(colour.r, colour.g, colour.b) >= 0.35
+            if !pale, vivid, distance > Self.foreignColourDistance {
+                guard pixels.share(of: kept, in: rect) < 0.01, pixels.share(of: colour, in: rect) >= 0.03 else { break }
+            } else if pale || cut == words.count, distance > Self.otherColourDistance {
+                // (The box of a word reaches a pixel or two into the glyph before it: a trace
+                // of the row's hue at its edge is not the word's.)
+                let own = pixels.share(of: colour, in: rect)
+                guard own >= 0.03, pixels.share(of: kept, in: rect) < max(0.005, 0.08 * own) else { break }
+                pale = true
+            } else {
+                break
+            }
+            foreign = colour
+            cut -= 1
+        }
+        if pale {
+            var tail = line
+            tail.glyphs = Array(line.glyphs[words[cut].lowerBound...])
+            guard Self.isMadeOfNameWords(tail.text) else { return line }
+            // The colour the row is held to must be the row's beyond doubt: a wrapped row that
+            // begins with the end of a link ("Bandage] cheap, pst me") has the link's colour
+            // on its first words, and so has a row with a name over its start. Most of what
+            // is left, and three words of it at least, must be drawn in that colour.
+            if !parsed.hasPrefix, line.glyphs.first(where: { $0.character == "[" || $0.character == "]" })?.character == "]" {
+                return line
+            }
+            let own = words[..<cut].filter { pixels.share(of: kept, in: Self.rect(of: $0, in: line)) >= 0.03 }.count
+            guard own >= 3, own * 2 > cut else { return line }
+        }
+        guard cut < words.count, let foreign else { return line }
+        // Over a busy scene the colour sampled from a few glyphs can be the scene's. The
+        // reference is believed only when the row as a whole says the same.
+        guard let whole = pixels.glyphColor(in: [line.box]),
+              PixelBuffer.chromaDistance(kept, whole) < (pale ? 0.15 : 0.3) else { return line }
+
+        var trimmed = line
+        trimmed.glyphs = Array(line.glyphs[..<words[cut].lowerBound])
+        let right = trimmed.glyphs.map(\.maxX).max() ?? line.box.maxX
+        trimmed.box = CGRect(x: line.box.minX, y: line.box.minY, width: max(2, right - line.box.minX), height: line.box.height)
+
+        // Erasing a pale colour next to pale chat text takes the edges of the chat glyphs with
+        // it: such a row is not read again.
+        if let reread, !pale, line.confidence < 0.9 || !Self.bracketsBalanced(trimmed.glyphs),
+           var again = reread(foreign, kept) {
+            again = trimForeignTail(again, pixels: pixels, clientLocale: clientLocale, reread: nil)
+            let second = ChatLineParser.parse(again.text, locale: clientLocale)
+            let sound = Self.bracketsBalanced(again.glyphs)
+            if second.hasPrefix == parsed.hasPrefix, again.glyphs.count * 10 >= trimmed.glyphs.count * 7,
+               sound || !Self.bracketsBalanced(trimmed.glyphs),
+               again.confidence >= line.confidence || (sound && again.confidence >= 0.45) {
+                return again
+            }
+        }
+        return trimmed
+    }
+
+    /// Up to four words of letters, with or without the angle brackets of a guild tag: "Some
+    /// Name", "<Some Guild>", "some Nam" (OCR gets the case of a first letter wrong, and a
+    /// name that runs out of the captured region is cut short). Numbers and punctuation, which
+    /// chat is full of, are not in names.
+    static func isMadeOfNameWords(_ text: String) -> Bool {
+        let words = text.split(separator: " ")
+        guard (1...4).contains(words.count) else { return false }
+        return words.allSatisfy { word in
+            var w = Substring(word)
+            if w.hasPrefix("<") { w = w.dropFirst() }
+            if w.hasSuffix(">") { w = w.dropLast() }
+            return w.filter(\.isLetter).count >= 2 && w.allSatisfy { $0.isLetter || $0 == "'" || $0 == "’" || $0 == "-" }
+        }
+    }
+
+    /// No player channel is drawn in this colour: it is a colour of names over characters
+    /// (blue, green, red, yellow — which system text shares) or of nothing known.
+    private static func isWorldColour(_ colour: RGBColor) -> Bool {
+        guard let channel = ChatColors.channel(for: colour) else { return true }
+        return channel == .system || channel == .emote
+    }
+
+    /// Rows per frame that may be read a second time for text of the world drawn through them.
+    static let maxWorldTextRereads = 4
+
+    /// A name floating over a character that stands behind the chat window is drawn through
+    /// the middle of a chat row as often as over its end, and OCR then reads both as one run of
+    /// letters ("without quests" + "<Some Guild>" = "withSomeGutsts"). Chat text outside
+    /// brackets has one colour, so a word there that is mostly drawn in a vivid colour no
+    /// player channel uses (the blue, green, red and yellow of names) gives the overlap away.
+    /// `reread` is asked for a second reading with that colour erased; it replaces the first
+    /// when it is a sound chat row.
+    private func withoutWorldTextInside(_ line: Reading, pixels: PixelBuffer, clientLocale: ClientLocale,
+                                        reread: (_ foreign: RGBColor, _ kept: RGBColor) -> Reading?) -> Reading {
+        let words = Self.words(line.glyphs)
+        // The second reading uses the first pass's model only: a line another model had to
+        // read (Cyrillic, Chinese, Japanese) would come back worse.
+        guard words.count >= 2, !line.detached, Self.count(line.glyphs, .cyrillic, .han, .kana) == 0 else { return line }
+        let parsed = ChatLineParser.parse(line.text, locale: clientLocale)
+        let balanced = Self.bracketsBalanced(line.glyphs)
+        var damaged = !balanced || parsed.isDamagedHeader
+        var mustBecomeHeader = false
+
+        // The colour the row's text ought to have, and the first word that may be covered.
+        var reference: RGBColor?
+        var first = 0
+        // The colour was read off the channel tag: it is the row's for certain.
+        var fromTag = false
+        if line.glyphs[0].character == "[", ChatLineParser.opensLikeHeader(line.text) {
+            fromTag = true
+            // A channel tag is drawn in the colour of the message. When its closing bracket
+            // is gone, its first word ("[1.", "[Guild") still is.
+            if let close = line.glyphs.firstIndex(where: { $0.character == "]" }), close <= 28 {
+                reference = pixels.glyphColor(in: [Self.rect(of: 0..<(close + 1), in: line)])
+                first = words.firstIndex { $0.lowerBound > close } ?? words.count
+            } else {
+                reference = pixels.glyphColor(in: [Self.rect(of: words[0], in: line)])
+                first = 1
+            }
+        } else if parsed.hasPrefix {
+            let bodyWords = parsed.body.split(separator: " ").count
+            guard bodyWords >= 2, bodyWords < words.count, line.text.hasSuffix(parsed.body) else { return line }
+            let firstBody = words.count - bodyWords
+            reference = pixels.glyphColor(in: [Self.rect(of: words[firstBody], in: line)])
+            first = firstBody + 1
+        } else {
+            // A wrapped row: most of it is chat, whichever of its words are covered. When
+            // most of it is NOT in a chat colour, it may be a header row with a name of the
+            // world over its start, and the chat colour is the other one on the row.
+            // "[Some Name]xxxx": a speech header ("[Name] yells:") that no longer reads as one.
+            let opensWithName = line.glyphs[0].character == "[" && line.glyphs[1].character.isLetter
+            guard words.count >= 3 || opensWithName else { return line }
+            mustBecomeHeader = opensWithName
+            reference = pixels.glyphColor(in: [line.box])
+            if let dominant = reference, Self.isWorldColour(dominant),
+               let other = pixels.glyphColor(in: [line.box], besides: dominant), !Self.isWorldColour(other),
+               max(other.r, other.g, other.b) >= 0.6,
+               PixelBuffer.chromaDistance(other, dominant) > Self.foreignColourDistance,
+               pixels.share(of: other, in: line.box) >= max(0.02, 0.3 * pixels.share(of: dominant, in: line.box)) {
+                reference = other
+                mustBecomeHeader = true
+            }
+        }
+        guard let kept = reference, first < words.count, !Self.isWorldColour(kept) else { return line }
+
+        if mustBecomeHeader { damaged = true }
+        // Names and links keep their own colours inside brackets; on a row whose brackets do
+        // not pair up nothing can be told apart that way, and the row is damaged anyway.
+        var depth = 0
+        var bracketed = Set<Int>()
+        for (n, word) in words.enumerated() {
+            var inside = depth > 0
+            for g in line.glyphs[word] {
+                if g.character == "[" { depth += 1; inside = true }
+                if g.character == "]" { depth = max(0, depth - 1); inside = true }
+            }
+            if inside { bracketed.insert(n) }
+        }
+        // Not the colour of the words: the colour of what else is drawn where they are, in
+        // one pass over all of them.
+        let rects = (first..<words.count).filter { damaged || !bracketed.contains($0) }.map { Self.rect(of: words[$0], in: line) }
+        guard !rects.isEmpty, let foreign = pixels.glyphColor(in: rects, besides: kept),
+              PixelBuffer.chromaDistance(foreign, kept) > Self.foreignColourDistance,
+              max(foreign.r, foreign.g, foreign.b) - min(foreign.r, foreign.g, foreign.b) >= 0.35,
+              rects.contains(where: { pixels.share(of: foreign, in: $0) >= 0.03 }) else { return line }
+        // A colour no player channel uses, or the red of a yell behind a tag that tells the
+        // row is no yell: a hostile name is drawn in that red, and no item link is. (The
+        // orange of a legendary link is the colour of raid chat: other channel colours stay.)
+        let named = ChatColors.channel(for: foreign)
+        guard named == nil || named == .system
+                || (fromTag && named == .yell && ChatColors.channel(for: kept) != .yell) else { return line }
+        guard var again = reread(foreign, kept) else { return line }
+
+        let second = ChatLineParser.parse(again.text, locale: clientLocale)
+        guard !second.isDamagedHeader, again.confidence >= 0.45 else { return line }
+        again.ownColour = kept
+        if damaged {
+            // Anything that reads as a header again is better than a row that does not.
+            return second.hasPrefix ? again : line
+        }
+        guard Self.bracketsBalanced(again.glyphs), second.hasPrefix == parsed.hasPrefix, again.glyphs.count * 10 >= line.glyphs.count * 6 else { return line }
+        if parsed.hasPrefix, second.sender != parsed.sender || second.channelLabel != parsed.channelLabel { return line }
+        return again
+    }
+
+    /// Hue distance (brightness removed) beyond which a word is not in the colour of its row.
+    /// Channel pink against the green of a friendly name is about 1.2.
+    static let foreignColourDistance = 0.5
+    /// The same for a colour that is not vivid: just beyond the distance within which
+    /// `PixelBuffer.share` counts a pixel as drawn in a hue. Channel pink against white is 0.32.
+    static let otherColourDistance = 0.25
+
+    /// Reads the row of `line` again from a copy in which everything in the hue of `foreign` is
+    /// blacked out.
+    private func reread(_ line: Reading, without foreign: RGBColor, keeping kept: RGBColor, pixels: PixelBuffer,
+                        preprocess: Options.Preprocess, upscale: CGFloat, languages: [String], autodetect: Bool) -> Reading? {
+        // The rows above and below come along whole: half a row of cut-off glyphs disturbs the reading.
+        let pad = max(3, line.box.height)
+        let top = max(0, Int((line.box.minY - pad).rounded(.down)))
+        let bottom = min(pixels.height, Int((line.box.maxY + pad).rounded(.up)))
+        guard bottom - top >= 8, var strip = pixels.strip(top..<bottom) else { return nil }
+        strip.erase(colour: foreign, keeping: kept, reach: max(2, Int(line.box.height / 12)))
+        switch preprocess {
+        case .none: break
+        case .maxChannel: strip.flattenToMaxChannel(inverted: false)
+        case .maxChannelInverted: strip.flattenToMaxChannel(inverted: true)
+        }
+        guard var image = strip.makeImage() else { return nil }
+        if upscale != 1, let enlarged = PixelBuffer(image, scale: upscale)?.makeImage() { image = enlarged }
+        let pass = Pass(handler: VNImageRequestHandler(cgImage: image, options: [:]),
+                        imageSize: CGSize(width: strip.width, height: strip.height), options: options)
+        guard let found = try? pass.run(languages: languages, autodetect: autodetect, region: nil) else { return nil }
+        // The reading that starts where the row starts.
+        let middle = line.box.midY - CGFloat(top)
+        let candidates = Self.mergeIntoLines(found).filter { !$0.detached && $0.box.minY < middle && $0.box.maxY > middle }
+        guard var best = candidates.min(by: { abs($0.box.minX - line.box.minX) < abs($1.box.minX - line.box.minX) }),
+              abs(best.box.minX - line.box.minX) < line.box.height else { return nil }
+        best.box = best.box.offsetBy(dx: 0, dy: CGFloat(top))
+        return best
     }
 
     // MARK: - Rescue, enUS client

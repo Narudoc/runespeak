@@ -14,24 +14,10 @@ extension RunespeakCore.RGBColor {
 
 enum OverlayChatFormat {
     /// Channel tag without brackets, or nil when the game shows none for this line.
-    static func channelTag(for message: ChatMessage) -> String? {
-        if let label = message.channelLabel?.trimmingCharacters(in: .whitespaces), !label.isEmpty {
-            return label
-        }
-        // Whispers carry no bracketed tag in game; without one a translated whisper would be
-        // indistinguishable from /say.
-        return message.channel == .whisper ? "귓속말" : nil
-    }
+    static func channelTag(for message: ChatMessage) -> String? { ChatDisplay.channelTag(for: message) }
 
     /// "[길드] 이름: " — whatever parts exist.
-    static func prefix(for message: ChatMessage) -> String {
-        var out = ""
-        if let tag = channelTag(for: message) { out += "[\(tag)] " }
-        if let sender = message.sender?.trimmingCharacters(in: .whitespaces), !sender.isEmpty {
-            out += "\(sender): "
-        }
-        return out
-    }
+    static func prefix(for message: ChatMessage) -> String { ChatDisplay.prefix(for: message) }
 
     /// The line as the game showed it.
     static func originalLine(for message: ChatMessage) -> String {

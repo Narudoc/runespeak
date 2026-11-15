@@ -133,6 +133,7 @@ korean	english	aliases
 - **「대기 중 · 화면에서 게임 채팅창을 찾을 수 없습니다」** — 게임이 꺼졌거나 접혀 있거나, 잡아 둔 사각형이 지금의 게임 창 밖에 있습니다. 창 크기나 해상도를 바꿨다면 채팅창 위치를 다시 잡으세요.
 - **「게임 화면을 찍지 못했습니다 (…)」** — 게임은 보이는데 macOS가 캡처를 거부한 경우입니다. 괄호 안의 오류 이름이 `errors.log`에도 남습니다. 화면 기록 허용이 풀리지 않았는지 먼저 확인하세요.
 - **이름 0개, 줄임말 0개로 나옴** — `swift build`로 만든 실행 파일을 직접 띄우면 사전이 들어 있지 않습니다. `scripts/build-app.sh`가 만든 앱을 실행하세요. 빠진 파일 이름은 `errors.log`에 적힙니다.
+- **채팅창 뒤로 캐릭터가 지나갈 때 번역이 몇 초 늦음** — 머리 위 이름이 채팅 줄을 가리면 그 줄이 제대로 읽힐 때까지 최대 3.5초(기본 캡처 간격 기준) 기다렸다가 내보냅니다. 그때까지도 못 읽으면 읽힌 만큼만 먼저 보여 줍니다: 첫 줄이 가려진 메시지는 아랫줄만 보낸 사람 없이, 중간 줄이 계속 바뀌어 읽히는 메시지는 그 자리를 「…」로, 한 줄짜리 메시지는 「(다른 글자에 가려 읽지 못한 줄)」로 표시합니다. 가리던 이름이 비켜나거나 채팅이 올라가 그 줄이 제대로 읽히면, 먼저 보여 준 줄이 온전한 메시지로 바뀌고 번역도 새로 붙습니다 (`chat_history.txt`에는 두 줄이 모두 남습니다). 이름이 줄 끝에 바짝 붙어 채팅 글자처럼 또렷하게 읽힌 경우에는 처음에 이름까지 함께 나올 수 있는데, 이름이 비켜나고 약 14초 안에 그 줄이 두 번 연달아 이름 없이 읽히면 같은 방식으로 고쳐집니다.
 - **특정 이름이 계속 틀림** — `my_terms.tsv`에 이름을 등록하거나, 그 줄을 우클릭해 [다시 번역]으로 교정 기록을 남기세요.
 
 ## 개발할 때
@@ -143,6 +144,13 @@ swift build && swift test
 .build/debug/Runespeak --pipeline-selftest   # 인식 → 새 줄 추적 → 번역 대기열까지 통째로 점검
 .build/debug/Runespeak --ocr-selftest --image 스크린샷.png [enUS]   # 실제 스크린샷으로 인식 결과 보기
 .build/debug/Runespeak --dictionary-check data [채팅줄.txt]         # 사전 건수, 읽는 시간, 줄별 참고 자료
+.build/debug/Runespeak --replay-image 스크린샷.png [둘째.png ...] [--crop x,y,w,h] [--frames N] [--locale koKR|enUS]
+                                             # 저장한 스크린샷을 인식 → 새 줄 추적까지 흘려 보고, 읽은 줄과 내보낸 메시지를 출력
+                                             # 여러 장을 주면 같은 자리를 차례로 찍은 화면으로 보고 이어서 흘림
+.build/debug/Runespeak --translate-check 채팅줄.txt [--data data] [--batch N] [--flavor classic|retail]
+                                             # 저장된 설정·키·모델로 실제 번역 요청을 보내 "원문 => 번역"과 토큰 비용을 출력 (요금이 나감)
+                                             # 한 줄에 메시지 하나: 본문만, 또는 "채널<TAB>보낸이<TAB>본문" (채널: guild, party, yell, whisper, publicChannel ...)
+                                             # 사용량 기록과 채팅 기록에는 아무것도 쓰지 않음
 ```
 
 소스는 `Sources/RunespeakCore`(채팅 추적, 사전, 번역 요청 — 화면과 무관한 부분)와 `Sources/Runespeak`(캡처, 겹침 창, 설정 화면)로 나뉘고, 단위 테스트는 `Tests/RunespeakCoreTests`에 있습니다. 테스트는 네트워크를 쓰지 않습니다.
