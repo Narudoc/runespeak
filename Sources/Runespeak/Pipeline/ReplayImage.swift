@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 import RunespeakCore
 
-/// `--replay-image <png> [<png> ...] [--crop x,y,w,h] [--frames N] [--locale koKR|enUS]`: runs
+/// `--replay-image <png> [<png> ...] [--crop x,y,w,h] [--frames N] [--locale koKR|enUS] [--trace]`: runs
 /// saved screenshots through the recogniser and the tracker the capture loop uses, without the
 /// game. Several images are consecutive captures of the same region, one capture interval
 /// apart; the last one is then repeated until N frames (default 3 for a single image, images +
@@ -78,6 +78,10 @@ enum ReplayImage {
         everyTab.enabledGroups = Set(ChannelGroup.allCases)
         print("locale: \(locale.rawValue)  frames: \(frames)  interval: \(settings.captureInterval)s")
 
+        if arguments.contains("--trace") || arguments.contains("--trace-glyphs") {
+            VisionTextRecognizer.trace = { FileHandle.standardError.write(Data(("[ocr] " + $0 + "\n").utf8)) }
+            VisionTextRecognizer.traceGlyphs = arguments.contains("--trace-glyphs")
+        }
         let recognizer = RecordingRecognizer()
         let processor = FrameProcessor(recognizer: recognizer, locale: locale)
         let start = Date()
@@ -99,7 +103,8 @@ enum ReplayImage {
         func f(_ v: CGFloat) -> String { String(format: "%.0f", Double(v)) }
         for (n, frame) in recognizer.frames.enumerated() {
             let title = recognizer.frames.count > 1 ? "OCR lines of image \(n + 1)" : "OCR lines"
-            print("\n== \(title) (\(frame.lines.count)), image \(f(frame.imageSize.width))x\(f(frame.imageSize.height)) ==")
+            print("\n== \(title) (\(frame.lines.count)), image \(f(frame.imageSize.width))x\(f(frame.imageSize.height))"
+                  + (frame.opaqueBackground ? ", opaque background" : "") + " ==")
             for (i, line) in frame.lines.enumerated() {
                 let box = line.box
                 let color = String(format: "%.2f,%.2f,%.2f", line.color.r, line.color.g, line.color.b)
@@ -124,6 +129,7 @@ enum ReplayImage {
                 print("     body: |\(message.body)|")
                 print("     raw:  |\(message.rawText)|")
                 print("     translate: default tabs=\(byDefault ? "yes" : "no"), all tabs on=\(allTabs ? "yes" : "no")")
+                if message.isFragment { print("     fragment: rows without their header row (shown as read, never translated alone)") }
                 if let earlier = corrections[message.id], !earlier.isEmpty {
                     replaced += earlier.count
                     print("     replaces: " + earlier.map { numbers[$0].map { "#\($0)" } ?? "?" }.joined(separator: ", ")
@@ -132,6 +138,12 @@ enum ReplayImage {
             }
         }
         print("\ntotal messages: \(total)" + (replaced > 0 ? " (\(total - replaced) lines after replacements)" : ""))
+        if VisionTextRecognizer.failedPasses > 0 {
+            // A second-model pass that fails is skipped: the result above is not what the app
+            // would show with every pass working.
+            print("WARNING: \(VisionTextRecognizer.failedPasses) recognition pass(es) FAILED and were skipped; this replay is not valid.")
+            return 1
+        }
         return 0
     }
 }

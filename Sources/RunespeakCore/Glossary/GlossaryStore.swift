@@ -5,7 +5,8 @@ import Foundation
 /// Files (missing ones are simply skipped):
 /// - `paths.root`: my_terms.tsv, corrections.tsv — the user's own
 /// - `paths.dataDirectory`: nicknames.tsv and, by flavor, official_names / abbreviations /
-///   chat_commands `.classic.tsv` or `.retail.tsv` — shipped with the app (see `DictionaryFiles`)
+///   chat_commands / zone_places `.classic.tsv` or `.retail.tsv` — shipped with the app (see
+///   `DictionaryFiles`)
 public final class GlossaryStore: GlossaryProviding, @unchecked Sendable {
 
     private let paths: AppPaths
@@ -13,6 +14,7 @@ public final class GlossaryStore: GlossaryProviding, @unchecked Sendable {
 
     // Guarded by `lock`. `index` and `commands` are immutable snapshots that are swapped whole.
     private var index: GlossaryIndex
+    private var places: GlossaryPlaceIndex
     private var commands: CommandTable
     private var corrections: CorrectionSet
     private var flavor: GameFlavor
@@ -23,6 +25,7 @@ public final class GlossaryStore: GlossaryProviding, @unchecked Sendable {
         self.flavor = flavor
         let loaded = GlossaryStore.load(paths: paths, flavor: flavor)
         index = loaded.index
+        places = loaded.places
         commands = loaded.commands
         warnings = loaded.warnings
         corrections = GlossaryStore.loadCorrections(paths: paths)
@@ -53,15 +56,65 @@ public final class GlossaryStore: GlossaryProviding, @unchecked Sendable {
         return flavor
     }
 
+    /// Number of zones with known places (0 means zone_places.<flavor>.tsv is missing: no place hints).
+    public var placeZoneCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return places.zoneCount
+    }
+
+    /// Number of places in those zones.
+    public var placeCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return places.placeCount
+    }
+
+    /// The zone a channel label names, both names, when its places are known ("1. 공개 -
+    /// 스톰원드" → 스톰윈드 / Stormwind City); nil for any other label.
+    public func zone(forChannelLabel label: String) -> GlossaryPair? {
+        lock.lock()
+        let places = self.places
+        lock.unlock()
+        return places.zone(forChannelLabel: label).map { places.zone($0) }
+    }
+
     public func hints(for texts: [String]) -> GlossaryHints {
+        hints(forLines: texts.map { GlossaryLine(text: $0) })
+    }
+
+    public func hints(forLines lines: [GlossaryLine]) -> GlossaryHints {
         lock.lock()
         let index = self.index
+        let places = self.places
         let corrections = self.corrections
         lock.unlock()
 
         var hints = GlossaryHints()
-        for text in texts {
-            let found = index.match(text)
+        var placeCount = 0
+        for line in lines {
+            let text = line.text
+            let units = GlossaryUnits(text)
+            let found = index.match(units)
+            // Places of the zone the line was said in, for the words nothing above explains.
+            if placeCount < GlossaryStore.batchLimits.places, let label = line.channelLabel,
+               let zone = places.zone(forChannelLabel: label) {
+                let offered = places.places(inZone: zone, units: units, explained: found.explained,
+                                            limit: min(GlossaryPlaceIndex.placesPerLine, GlossaryStore.batchLimits.places - placeCount))
+                if !offered.isEmpty {
+                    let pair = places.zone(zone)
+                    let entry = hints.zonePlaces.firstIndex { $0.zone == pair } ?? hints.zonePlaces.count
+                    if entry == hints.zonePlaces.count { hints.zonePlaces.append(GlossaryZonePlaces(zone: pair, places: [])) }
+                    for found in offered {
+                        // The same place found by the same words in another line is one hint.
+                        let place = GlossaryPlaceHint(korean: found.pair.korean, english: found.pair.english, written: found.written)
+                        let known = hints.zonePlaces[entry].places.contains {
+                            $0.english == place.english && $0.written.lowercased() == place.written.lowercased()
+                        }
+                        if known { continue }
+                        hints.zonePlaces[entry].places.append(place)
+                        placeCount += 1
+                    }
+                }
+            }
             for pair in found.names where hints.names.count < GlossaryStore.batchLimits.names && !hints.names.contains(pair) {
                 hints.names.append(pair)
             }
@@ -104,6 +157,7 @@ public final class GlossaryStore: GlossaryProviding, @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         self.flavor = flavor
         index = loaded.index
+        places = loaded.places
         commands = loaded.commands
         warnings = loaded.warnings
         // corrections.tsv is read under the lock: addCorrection appends under the same lock, so the file
@@ -113,7 +167,7 @@ public final class GlossaryStore: GlossaryProviding, @unchecked Sendable {
 
     // MARK: Loading
 
-    private static let batchLimits = (names: 80, abbreviations: 60, skills: 30, corrections: 10)
+    private static let batchLimits = (names: 80, abbreviations: 60, skills: 30, corrections: 10, places: 8)
     private static let correctionsPerText = 3
 
     private static func singleLine(_ s: String) -> String {
@@ -137,7 +191,7 @@ public final class GlossaryStore: GlossaryProviding, @unchecked Sendable {
     private static let looseKinds: Set<String> = ["spell", "spec"]
 
     private static func load(paths: AppPaths, flavor: GameFlavor)
-        -> (index: GlossaryIndex, commands: CommandTable, warnings: [String]) {
+        -> (index: GlossaryIndex, places: GlossaryPlaceIndex, commands: CommandTable, warnings: [String]) {
         let files = DictionaryFiles.names(for: flavor)
         let data = paths.dataDirectory
         var warnings: [String] = []
@@ -212,8 +266,18 @@ public final class GlossaryStore: GlossaryProviding, @unchecked Sendable {
         let abbreviations = GlossaryParser.abbreviations(table(files.abbreviations, GlossaryParser.abbreviationColumns))
         let index = GlossaryIndex(names: names, abbreviations: abbreviations, skills: skills)
 
+        // The official zone and instance names tell a misread channel label from the name of
+        // a zone the places table has no row for.
+        var zoneNames: [String] = []
+        for row in rows where row.kind == "zone" || row.kind == "instance" {
+            zoneNames.append(row.korean)
+            zoneNames.append(row.english)
+        }
+        let places = GlossaryPlaceIndex(rows: GlossaryParser.zonePlaces(table(files.zonePlaces, GlossaryParser.zonePlaceColumns)),
+                                        otherZoneNames: zoneNames)
+
         let commands = CommandTable(lines: GlossaryParser.commands(table(files.chatCommands, GlossaryParser.commandColumns)))
-        return (index, commands, warnings)
+        return (index, places, commands, warnings)
     }
 
     private static func isSingleWord(_ name: String) -> Bool {

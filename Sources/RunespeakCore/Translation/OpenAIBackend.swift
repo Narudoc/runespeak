@@ -38,7 +38,8 @@ struct OpenAIBackend: ProviderBackend {
         return set
     }
 
-    static func requestBody(modelID: String, system: String, user: String, careful: Bool, features: Set<RequestFeature>) -> JSONValue {
+    static func requestBody(modelID: String, system: String, addendum: String? = nil, user: String, careful: Bool,
+                            features: Set<RequestFeature>) -> JSONValue {
         let explicitCache = features.contains(.explicitCache)
         var effort: JSONValue?
         if features.contains(.effort) {
@@ -60,7 +61,7 @@ struct OpenAIBackend: ProviderBackend {
                             "text": .string(system),
                             "prompt_cache_breakpoint": explicitCache ? .obj(["mode": .string("explicit")]) : nil,
                         ]),
-                    ]),
+                    ] + (addendum.map { [.obj(["type": .string("input_text"), "text": .string($0)])] } ?? [])),
                 ]),
                 .obj([
                     "role": .string("user"),
@@ -84,11 +85,12 @@ struct OpenAIBackend: ProviderBackend {
         ])
     }
 
-    func request(apiKey: String, modelID: String, system: String, user: String, careful: Bool, features: Set<RequestFeature>) -> URLRequest {
+    func request(apiKey: String, modelID: String, system: String, addendum: String?, user: String, careful: Bool,
+                 features: Set<RequestFeature>) -> URLRequest {
         ProviderBackends.jsonRequest(
             Self.endpoint,
             headers: ["authorization": "Bearer " + apiKey],
-            body: Self.requestBody(modelID: modelID, system: system, user: user, careful: careful, features: features))
+            body: Self.requestBody(modelID: modelID, system: system, addendum: addendum, user: user, careful: careful, features: features))
     }
 
     func parseResponse(_ data: Data) throws -> BackendResponse {

@@ -127,9 +127,35 @@ class ProviderTestCase: XCTestCase {
     }
 }
 
+/// A line of a zone's own channel, and the place the stub glossary finds for every such line.
+private func zoneChat(_ body: String) -> ChatMessage {
+    ChatMessage(channel: .publicChannel, channelLabel: "1. General - Mistral Reach", sender: "Dornhal", body: body,
+                rawText: body, color: .white, firstSeen: Date(timeIntervalSince1970: 0))
+}
+
+private let reachPlaces = [GlossaryZonePlaces(zone: GlossaryPair(korean: "안개 마루터", english: "Mistral Reach"), places: [
+    GlossaryPlaceHint(korean: "쇠부리 발굴현장", english: "Ironbeak Excavation Site", written: "IB site"),
+])]
+
 // MARK: - OpenAI
 
 final class OpenAITranslatorTests: ProviderTestCase {
+
+    /// A line with places of its zone goes in a request of its own, and that request (only
+    /// that one) carries the note about places behind the frozen prompt.
+    func testNoteAboutPlacesGoesWithTheRequestThatCarriesThem() async throws {
+        glossary.stubHints.zonePlaces = reachPlaces
+        StubURLProtocol.install { _, _ in .init(json: openAIResponse(text: answer([(1, "가")]))) }
+        _ = try await makeTranslator(.openai).translateIncoming([chat("hello all"), zoneChat("LF2M for the IB site quest")], context: context("gpt-6-luna"))
+        XCTAssertEqual(StubURLProtocol.requests.count, 2)
+        let systems = StubURLProtocol.requests.map { entry -> [String] in
+            let developer = ((object(entry.body)["input"] as? [[String: Any]])?.first?["content"] as? [[String: Any]]) ?? []
+            return developer.compactMap { $0["text"] as? String }
+        }
+        XCTAssertEqual(systems, [[TranslationPrompt.system], [TranslationPrompt.system, TranslationPrompt.zonePlacesNote]])
+        XCTAssertFalse(String(decoding: StubURLProtocol.requests[0].body, as: UTF8.self).contains("zone_places"))
+        XCTAssertTrue(String(decoding: StubURLProtocol.requests[1].body, as: UTF8.self).contains("zone_places"))
+    }
 
     func testRequestShapeAndResponse() async throws {
         fillGlossary()
@@ -351,6 +377,18 @@ final class OpenAITranslatorTests: ProviderTestCase {
 // MARK: - Gemini
 
 final class GeminiTranslatorTests: ProviderTestCase {
+
+    /// The same for Gemini, whose system instruction is one text.
+    func testNoteAboutPlacesGoesWithTheRequestThatCarriesThem() async throws {
+        glossary.stubHints.zonePlaces = reachPlaces
+        StubURLProtocol.install { _, _ in .init(json: geminiResponse(text: answer([(1, "가")]))) }
+        _ = try await makeTranslator(.gemini).translateIncoming([chat("hello all"), zoneChat("LF2M for the IB site quest")], context: context("gemini-3.5-flash-lite"))
+        XCTAssertEqual(StubURLProtocol.requests.count, 2)
+        XCTAssertEqual(StubURLProtocol.requests.map { object($0.body)["system_instruction"] as? String },
+                       [TranslationPrompt.system, TranslationPrompt.system + "\n\n" + TranslationPrompt.zonePlacesNote])
+        XCTAssertFalse(String(decoding: StubURLProtocol.requests[0].body, as: UTF8.self).contains("zone_places"))
+        XCTAssertTrue(String(decoding: StubURLProtocol.requests[1].body, as: UTF8.self).contains("zone_places"))
+    }
 
     func testRequestShapeAndResponse() async throws {
         fillGlossary()

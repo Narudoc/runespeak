@@ -29,7 +29,8 @@ struct GeminiBackend: ProviderBackend {
         return set
     }
 
-    static func requestBody(modelID: String, system: String, user: String, careful: Bool, features: Set<RequestFeature>) -> JSONValue {
+    static func requestBody(modelID: String, system: String, addendum: String? = nil, user: String, careful: Bool,
+                            features: Set<RequestFeature>) -> JSONValue {
         var level: JSONValue?
         if features.contains(.effort) {
             level = .string(careful ? "medium" : features.contains(.thinkingOff) ? "minimal" : "low")
@@ -38,7 +39,8 @@ struct GeminiBackend: ProviderBackend {
         // the prefix, so the frozen system instruction comes first.
         return .obj([
             "model": .string(modelID),
-            "system_instruction": .string(system),
+            // (What only some requests carry follows it: the frozen part stays the prefix.)
+            "system_instruction": .string(addendum.map { system + "\n\n" + $0 } ?? system),
             "input": .string(user),
             "response_format": features.contains(.structuredOutput)
                 ? .obj([
@@ -56,12 +58,13 @@ struct GeminiBackend: ProviderBackend {
         ])
     }
 
-    func request(apiKey: String, modelID: String, system: String, user: String, careful: Bool, features: Set<RequestFeature>) -> URLRequest {
+    func request(apiKey: String, modelID: String, system: String, addendum: String?, user: String, careful: Bool,
+                 features: Set<RequestFeature>) -> URLRequest {
         // The key travels in a header, never in the URL: URLs end up in logs and proxies.
         ProviderBackends.jsonRequest(
             Self.endpoint,
             headers: ["x-goog-api-key": apiKey, "api-revision": Self.apiRevision],
-            body: Self.requestBody(modelID: modelID, system: system, user: user, careful: careful, features: features))
+            body: Self.requestBody(modelID: modelID, system: system, addendum: addendum, user: user, careful: careful, features: features))
     }
 
     /// `error.code` values that mean policy or safety blocked the answer.

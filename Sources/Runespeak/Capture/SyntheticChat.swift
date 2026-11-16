@@ -56,6 +56,8 @@ enum SyntheticChat {
         case busy
         /// Worst case: text over a bright scene (snow, sky), only the shadow separates it.
         case bright
+        /// The chat window's own background set to opaque: plain black, nothing shows through.
+        case black
     }
 
     enum Edge: String, CaseIterable {
@@ -272,10 +274,15 @@ enum SyntheticChat {
     /// A deterministic "game world": gradient plus blobs and hard-edged shapes, optionally dimmed.
     private static func drawBackground(_ ctx: CGContext, width: Int, height: Int, kind: Background) {
         let w = CGFloat(width), h = CGFloat(height)
+        if kind == .black {
+            ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            return
+        }
         var rng = LCG(state: 0x5EED_CAFE)
         let base: (lo: CGFloat, hi: CGFloat)
         switch kind {
-        case .darkPanel, .busy: base = (0.15, 0.75)
+        case .darkPanel, .busy, .black: base = (0.15, 0.75)
         case .bright: base = (0.72, 0.97)
         }
         func shade() -> CGColor {
@@ -308,7 +315,7 @@ enum SyntheticChat {
         case .busy:
             ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.25))
             ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
-        case .bright:
+        case .bright, .black:
             break
         }
     }

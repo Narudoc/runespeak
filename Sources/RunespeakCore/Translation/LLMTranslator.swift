@@ -6,6 +6,13 @@ import Foundation
 ///
 /// Request shape, for every task and provider: frozen system prompt (the cacheable prefix) →
 /// one user message holding a JSON payload → structured JSON output. See `TranslationPrompt`.
+///
+/// Incoming lines that carry places of their zone (`incomingPlaces`) are sent in a request
+/// of their own, with a note about those places behind the frozen prompt: a place handed
+/// to the model with one line was seen to end up in the translation of another line of
+/// the same request ("the site is down" after a line about an excavation site), whatever
+/// the prompt said. Kept apart, the lines without places are translated exactly as if
+/// places did not exist.
 public class LLMTranslator: Translating, @unchecked Sendable {
 
     /// Knobs that only tests change.
@@ -28,6 +35,14 @@ public class LLMTranslator: Translating, @unchecked Sendable {
 
     /// WoW's chat box limit, in UTF-8 bytes.
     public static let chatByteLimit = 255
+
+    /// Size of the system prompt every request carries (see `TranslationPrompt.system`), in
+    /// UTF-8 bytes: what a cost estimate needs to know about it.
+    public static var systemPromptByteCount: Int { TranslationPrompt.system.utf8.count }
+
+    /// Size of what a request whose lines carry places of their zone is told in addition
+    /// (`TranslationPrompt.zonePlacesNote`), in UTF-8 bytes.
+    public static var zonePlacesNoteByteCount: Int { TranslationPrompt.zonePlacesNote.utf8.count }
 
     private enum Profile {
         /// Incoming and outgoing chat: lowest latency. Both use the same settings on purpose —
@@ -71,11 +86,43 @@ public class LLMTranslator: Translating, @unchecked Sendable {
 
     public func translateIncoming(_ messages: [ChatMessage], context: TranslationRequestContext) async throws -> [UUID: TranslationOutput] {
         if messages.isEmpty { return [:] }
-        let hints = glossary.hints(for: messages.map { Self.withoutLinks($0.body) })
-        let lines = messages.enumerated().map { TranslationPrompt.line($0.offset + 1, from: $0.element) }
+        // One request, or two when some of the lines carry places of their zone and some
+        // do not. What one of them translated is not thrown away because the other failed:
+        // the lines without an answer are simply missing, and whoever asked asks again.
+        // (The app's queue hands over one of `incomingRequests(for:)` at a time, so that
+        // each request's failure reaches it as what it was.)
+        let hints = Self.incomingHints(for: messages, glossary: glossary)
+        let requests = Self.incomingRequests(for: messages, among: hints, glossary: glossary)
+        var result: [UUID: TranslationOutput] = [:]
+        var failure: Error?
+        for request in requests {
+            do {
+                // (What was looked up for all the lines is what their only request needs.)
+                let own = requests.count == 1 ? hints : Self.incomingHints(for: request, glossary: glossary)
+                result.merge(try await translate(request, hints: own, context: context)) { first, _ in first }
+            } catch {
+                if failure == nil { failure = error }
+            }
+        }
+        if result.isEmpty, let failure { throw failure }
+        return result
+    }
+
+    /// The requests `translateIncoming` makes for `messages` (`incomingRequests(for:glossary:)`).
+    /// Each of them, handed over by itself, is one request.
+    public func incomingRequests(for messages: [ChatMessage]) -> [[ChatMessage]] {
+        Self.incomingRequests(for: messages, glossary: glossary)
+    }
+
+    /// One request for incoming lines: lines that carry places, or lines that do not.
+    private func translate(_ messages: [ChatMessage], hints: GlossaryHints,
+                           context: TranslationRequestContext) async throws -> [UUID: TranslationOutput] {
+        let places = Self.incomingPlaces(for: messages, among: hints, glossary: glossary)
+        let lines = messages.enumerated().map { TranslationPrompt.line($0.offset + 1, from: $0.element, places: places[$0.offset]) }
         let user = TranslationPrompt.userMessage(task: .incoming, reader: context.reader, flavor: context.flavor,
                                                  hints: hints, recent: context.recent, lines: lines)
-        let reply = try await complete(user: user, model: context.model, profile: .live, expectedLines: messages.count)
+        let reply = try await complete(user: user, withPlaces: lines.contains { $0.zonePlaces != nil }, model: context.model,
+                                       profile: .live, expectedLines: messages.count)
 
         var result: [UUID: TranslationOutput] = [:]
         for (index, message) in messages.enumerated() {
@@ -96,12 +143,12 @@ public class LLMTranslator: Translating, @unchecked Sendable {
     }
 
     public func retranslate(_ message: ChatMessage, previous: String?, context: TranslationRequestContext) async throws -> TranslationOutput {
-        let hints = glossary.hints(for: [Self.withoutLinks(message.body)])
-        let line = TranslationPrompt.line(1, from: message)
+        let hints = Self.incomingHints(for: [message], glossary: glossary)
+        let line = TranslationPrompt.line(1, from: message, places: Self.incomingPlaces(for: [message], among: hints, glossary: glossary)[0])
         let user = TranslationPrompt.userMessage(task: .retranslate, reader: context.reader, flavor: context.flavor,
                                                  previous: previous, hints: hints, recent: context.recent,
                                                  lines: [line])
-        let reply = try await complete(user: user, model: context.model, profile: .careful, expectedLines: 1)
+        let reply = try await complete(user: user, withPlaces: line.zonePlaces != nil, model: context.model, profile: .careful, expectedLines: 1)
         guard var text = reply.lines[1].map(Self.singleLine), !text.isEmpty else {
             throw TranslationError.badResponse(reply.truncated ? "응답이 중간에 끊겼습니다" : "번역 결과가 비어 있습니다")
         }
@@ -125,7 +172,7 @@ public class LLMTranslator: Translating, @unchecked Sendable {
                                                  targetLanguage: target.isEmpty ? "English" : target,
                                                  hints: hints, recent: context.recent,
                                                  lines: [TranslationPrompt.Line(number: 1, channel: nil, sender: nil, text: source)])
-        let reply = try await complete(user: user, model: context.model, profile: .live, expectedLines: 1)
+        let reply = try await complete(user: user, withPlaces: false, model: context.model, profile: .live, expectedLines: 1)
         let line = Self.pasteable(reply.lines[1] ?? "")
         if line.isEmpty {
             throw TranslationError.badResponse(reply.truncated ? "응답이 중간에 끊겼습니다" : "번역 결과가 비어 있습니다")
@@ -134,6 +181,69 @@ public class LLMTranslator: Translating, @unchecked Sendable {
     }
 
     // MARK: - Hint lookup
+
+    /// The dictionary material that goes along with incoming messages, for a live request and
+    /// for a careful retranslation alike: looked up by the text without its links, and by
+    /// the channel label, which for a zone's own channel brings in that zone's places.
+    public static func incomingHints(for messages: [ChatMessage], glossary: GlossaryProviding) -> GlossaryHints {
+        glossary.hints(forLines: messages.map { GlossaryLine(incoming: $0) })
+    }
+
+    /// Per message, the places of its zone that it may be speaking of: what `hints` holds for
+    /// the whole request, asked again line by line, because a place goes to the model with
+    /// the line whose words found it. `hints` without places saves the asking. A request
+    /// carries a handful at most (`placesPerRequest`): the first lines keep theirs. A typed
+    /// emote gets none: it is sent without its channel, so nothing would say where it was said.
+    public static func incomingPlaces(for messages: [ChatMessage], among hints: GlossaryHints,
+                                      glossary: GlossaryProviding) -> [GlossaryZonePlaces?] {
+        if hints.zonePlaces.isEmpty { return [GlossaryZonePlaces?](repeating: nil, count: messages.count) }
+        var left = placesPerRequest
+        return messages.map { message in
+            let line = GlossaryLine(incoming: message)
+            guard left > 0, line.channelLabel != nil, TranslationPrompt.typedEmote(message.body) == nil else { return nil }
+            let asked = messages.count == 1 ? hints : glossary.hints(forLines: [line])
+            guard var found = asked.zonePlaces.first, !found.places.isEmpty else { return nil }
+            found.places = Array(found.places.prefix(left))
+            left -= found.places.count
+            return found
+        }
+    }
+
+    /// Places of zones in one request, over all its lines.
+    public static var placesPerRequest: Int { TranslationPrompt.maxZonePlaces }
+
+    /// The requests incoming messages are translated in, in the order they are made: the
+    /// lines that carry no places of their zone, then those that do (see the type's
+    /// comment). One request when all are of one kind.
+    /// Lines with places are split further only when together they have more places than
+    /// one request carries, so that no line loses its places to the bound and ends up, without
+    /// them, next to lines that have theirs.
+    public static func incomingRequests(for messages: [ChatMessage], glossary: GlossaryProviding) -> [[ChatMessage]] {
+        incomingRequests(for: messages, among: incomingHints(for: messages, glossary: glossary), glossary: glossary)
+    }
+
+    /// `hints`: what was looked up for all the messages together; without places among it
+    /// nothing more is asked.
+    static func incomingRequests(for messages: [ChatMessage], among hints: GlossaryHints, glossary: GlossaryProviding) -> [[ChatMessage]] {
+        if messages.isEmpty { return [] }
+        if hints.zonePlaces.isEmpty || messages.count == 1 { return [messages] }
+        var plain: [ChatMessage] = []
+        var placed: [[ChatMessage]] = []
+        var room = 0
+        for message in messages {
+            let count = incomingPlaces(for: [message], among: incomingHints(for: [message], glossary: glossary), glossary: glossary)[0]?.places.count ?? 0
+            if count == 0 {
+                plain.append(message)
+            } else if count <= room, !placed.isEmpty {
+                placed[placed.count - 1].append(message)
+                room -= count
+            } else {
+                placed.append([message])
+                room = placesPerRequest - count
+            }
+        }
+        return ([plain] + placed).filter { !$0.isEmpty }
+    }
 
     /// The official names of the thing a link names, in both languages (for telling which
     /// link a rewritten one was, see `TranslationPrompt.restoringLinks`).
@@ -244,7 +354,7 @@ public class LLMTranslator: Translating, @unchecked Sendable {
         lock.unlock()
     }
 
-    private func complete(user: String, model: String, profile: Profile, expectedLines: Int) async throws -> ModelReply {
+    private func complete(user: String, withPlaces: Bool, model: String, profile: Profile, expectedLines: Int) async throws -> ModelReply {
         guard !apiKey.isEmpty else { throw TranslationError.missingAPIKey }
         let modelID = model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !modelID.isEmpty else { throw TranslationError.modelNotFound("") }
@@ -253,7 +363,8 @@ public class LLMTranslator: Translating, @unchecked Sendable {
         // Each pass may drop one rejected feature, so the loop is bounded by the feature count.
         for _ in 0...RequestFeature.allCases.count {
             let active = features(for: modelID, profile: profile)
-            var request = backend.request(apiKey: apiKey, modelID: modelID, system: TranslationPrompt.system, user: user,
+            var request = backend.request(apiKey: apiKey, modelID: modelID, system: TranslationPrompt.system,
+                                          addendum: withPlaces ? TranslationPrompt.zonePlacesNote : nil, user: user,
                                           careful: profile == .careful, features: active)
             switch profile {
             case .careful: request.timeoutInterval = tuning.carefulTimeout
@@ -295,6 +406,14 @@ public class LLMTranslator: Translating, @unchecked Sendable {
             throw TranslationError.unusableReply(reply.truncated ? "응답이 중간에 끊겼습니다" : "번역 결과를 해석할 수 없습니다")
         }
         return reply
+    }
+}
+
+public extension GlossaryLine {
+    /// An incoming message as the dictionary is asked about it: its body without the
+    /// [item / spell links] (see `LLMTranslator.withoutLinks`), in the message's channel.
+    init(incoming message: ChatMessage) {
+        self.init(text: LLMTranslator.withoutLinks(message.body), of: message)
     }
 }
 

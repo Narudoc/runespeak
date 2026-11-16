@@ -4,11 +4,143 @@ extension LanguageGate {
 
     /// Whether `text` (a chat body) is worth sending to the translator for this reader.
     public static func needsTranslation(_ text: String, reader: ReaderLanguage) -> Bool {
-        let counts = ScriptCounts(stripNoise(text))
+        let stripped = stripNoise(text)
+        // What OCR makes of text it cannot read is no language: a translator can only hand it
+        // back, and it would be shown as a translation.
+        if isDebris(stripped) { return false }
+        let counts = ScriptCounts(stripped)
         switch reader {
         case .korean: return koreanReaderNeeds(counts)
         case .english: return englishReaderNeeds(counts)
         }
+    }
+
+    /// Whether a chat message is worth sending to the translator for this reader: language the
+    /// reader does not read, in a message that is whole. Rows that went out without their
+    /// header row (`ChatMessage.isFragment`) are the end of a sentence without its beginning:
+    /// translated alone they come out as something nobody said, so they wait for the whole
+    /// message, which replaces them.
+    public static func needsTranslation(_ message: ChatMessage, reader: ReaderLanguage) -> Bool {
+        if message.isFragment { return false }
+        return needsTranslation(message.body, reader: reader)
+    }
+
+    /// True when `text` (a chat body, or a whole row) is what OCR makes of text it cannot read
+    /// rather than something a player typed: letters of several scripts inside one word
+    /// ("7ЛУ", "UХЕyоu"), stroke marks ("|", "™", "»"), letters and digits in no pattern chat
+    /// uses ("CE024", "E82t91"). Links are left out of the judgement. One such token among
+    /// words that read as language ("| need help") does not make a line unreadable.
+    public static func isUnreadable(_ text: String) -> Bool {
+        isDebris(stripNoise(text))
+    }
+
+    /// True when nothing is left of `text` once its links are taken out: a row or a message
+    /// made of links only, including a link whose brackets did not all survive OCR.
+    public static func isOnlyLinks(_ text: String) -> Bool {
+        guard text.contains("[") || text.contains("]") else { return false }
+        return !stripNoise(text).contains { $0.isLetter || $0.isNumber }
+    }
+
+    enum TokenKind { case word, amount, code, neutral, junk }
+
+    private static func scriptClass(_ u: Unicode.Scalar) -> Character {
+        switch u.value {
+        case 0x30...0x39: return "d"
+        case 0x41...0x5A, 0x61...0x7A, 0xC0...0x24F, 0x1E00...0x1EFF: return (u.value == 0xD7 || u.value == 0xF7) ? "s" : "L"
+        case 0xAC00...0xD7A3, 0x1100...0x11FF, 0x3131...0x318E: return "H"
+        case 0x400...0x52F: return "C"
+        case 0x370...0x3FF: return "G"
+        case 0x3040...0x30FF, 0x3400...0x9FFF: return "J"
+        default: return u.properties.isAlphabetic ? "O" : "s"
+        }
+    }
+
+    private static let units: Set<String> = [
+        "g", "s", "c", "k", "x", "h", "m", "v", "gp", "sp", "cp", "ea", "st", "nd", "rd", "th", "lvl", "min", "sec", "hr",
+        "dkp", "pt", "pts", "kg", "ms", "am", "pm",
+    ]
+    /// Marks OCR writes for strokes it cannot read; none of them is typed in chat. ("*!@#$%^&"
+    /// are the game's own profanity mask and are not in this list.)
+    private static let debrisMarks: Set<Character> = [
+        "|", "™", "»", "«", "‡", "£", "¦", "§", "¶", "©", "®", "°", "¬", "¢", "¥", "€", "†", "₴", "•", "·", "¤",
+    ]
+    private static let edgeMarks: Set<Character> = [
+        ".", ",", "!", "?", "~", "…", ":", ";", "'", "\"", "(", ")", "*", "^", "-", "+", "<", ">", "/", "=", "@", "#", "$", "%", "&", "_",
+        "’", "‘", "“", "”", "¿", "¡",
+    ]
+
+    static func kind(ofToken token: Substring) -> TokenKind {
+        var core = Substring(token)
+        while let f = core.first, edgeMarks.contains(f) { core = core.dropFirst() }
+        while let l = core.last, edgeMarks.contains(l) { core = core.dropLast() }
+        if core.isEmpty { return token.contains(where: { debrisMarks.contains($0) }) ? .junk : .neutral }
+        let hasDebris = core.contains { debrisMarks.contains($0) }
+        var classes = ""
+        var runs = 0
+        var last: Character = " "
+        for u in core.precomposedStringWithCanonicalMapping.unicodeScalars {
+            if u == "'" || u == "’" || u == "-" || debrisMarks.contains(Character(u)) { continue }
+            let c = scriptClass(u)
+            if c != last { runs += 1; last = c }
+            if !classes.contains(c) { classes.append(c) }
+        }
+        let letters = classes.filter { "LHCGJO".contains($0) }
+        // Scripts no one mixes inside a word: Cyrillic or Greek next to Latin, digits or Hangul.
+        if (classes.contains("C") || classes.contains("G")) && classes.count > 1 { return .junk }
+        // Any other alphabet (Thai, Arabic, Hebrew ...) is a word on its own and debris in a mix.
+        if classes.contains("O") { return letters.count > 1 || classes.contains("d") ? .junk : .word }
+        if hasDebris {
+            // "he||o": bars for l or I inside a Latin word. Anything else with such a mark is debris.
+            let onlyBars = core.allSatisfy { !debrisMarks.contains($0) || $0 == "|" }
+            return onlyBars && classes == "L" && core.filter({ $0 != "|" }).count >= 3 ? .word : .junk
+        }
+        if classes.contains("s") {
+            if (letters.isEmpty && !classes.contains("d")) || runs <= 3 { return .neutral }
+            // Typed punctuation that joins what are tokens of their own ("500g+tip", "1.5g",
+            // "1h+shield", "aq20+zg20"): each part is judged by itself.
+            let parts = core.split(whereSeparator: { edgeMarks.contains($0) && $0 != "'" && $0 != "’" && $0 != "-" })
+            guard parts.count >= 2, parts.count <= 4 else { return .junk }
+            let kinds = parts.map { kind(ofToken: $0) }
+            if kinds.contains(.junk) { return .junk }
+            return kinds.contains(.word) ? .word : (kinds.contains(.code) ? .code : .neutral)
+        }
+        if letters.isEmpty { return .amount }                                   // digits only
+        if !classes.contains("d") {                                               // letters only
+            if letters.count == 1 { return core.count >= 2 || letters == "H" || letters == "J" ? .word : .neutral }
+            // "DPS구함", "MC가실분", "有人打MC吗": Latin terms inside Korean, Chinese or Japanese.
+            return letters.allSatisfy({ "LHJ".contains($0) }) ? .word : .junk
+        }
+        // Letters and digits.
+        let text = core.lowercased()
+        if classes.contains("H") { return runs <= 3 ? .amount : .junk }           // "20렙", "3개씩", "t2셋"
+        if classes.contains("J") { return runs <= 3 ? .amount : .junk }
+        let digits = text.prefix { $0.isNumber }
+        let tail = text.dropFirst(digits.count)
+        if !digits.isEmpty, tail.allSatisfy({ $0.isLetter }), units.contains(String(tail)) { return .amount }   // "50g", "2s", "60s"
+        if text.range(of: #"^(\d+[gsc])+$"#, options: .regularExpression) != nil { return .amount }       // "5g50s"
+        if runs >= 4 { return .junk }                                             // "E82t91"
+        // "LF2M", "t2", "5v5", "2h", "ony8", "x2": a few letters around one or two digits.
+        if text.range(of: #"^[a-z]{1,5}\d{1,2}[a-z]{0,2}$|^\d{1,2}[a-z]{1,3}\d{0,2}$"#, options: .regularExpression) != nil,
+           text.filter(\.isNumber).count <= 2 { return .code }
+        // "2nite", "4ever", "brd5man": small letters around one digit or two, as people type
+        // them. (What OCR makes of Hangul it cannot read is capitals and digits: "20N", "54Hg".)
+        if runs <= 3, text.filter(\.isNumber).count <= 2, text.filter(\.isLetter).count >= 3,
+           core.allSatisfy({ !$0.isLetter || $0.isLowercase }) { return .code }
+        return .junk
+    }
+
+    /// `text` with links already removed. True when what is left is debris and not language.
+    static func isDebris(_ text: String) -> Bool {
+        var words = 0, junk = 0, wordChars = 0, junkChars = 0
+        for token in text.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "/" }) {
+            switch kind(ofToken: token) {
+            case .word: words += 1; wordChars += token.count
+            case .junk: junk += 1; junkChars += token.count
+            default: break
+            }
+        }
+        guard junk > 0 else { return false }
+        return words == 0 || junkChars >= wordChars
     }
 
     // MARK: - Decisions
@@ -53,6 +185,21 @@ extension LanguageGate {
                         depthSquare = 1
                     } else {
                         out.append(" ")
+                        // "LFG[The Old Iron": a link that runs on past the end of the text. The
+                        // capitalised words behind the bracket are its name.
+                        var rest = chars[chars.index(after: i)...]
+                        var end = rest.startIndex
+                        var taken = 0
+                        while let word = rest.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).first,
+                              isLinkWord(word, first: taken == 0) {
+                            end = word.endIndex
+                            rest = chars[end...]
+                            taken += 1
+                        }
+                        if taken > 0 {
+                            i = end
+                            continue
+                        }
                     }
                 } else {
                     depthSquare += 1
@@ -62,6 +209,18 @@ extension LanguageGate {
                     depthSquare -= 1
                     if depthSquare == 0 { out.append(" ") }
                 } else {
+                    // "Vow][Bring Back a Ring]": the end of a link that began before the text. The
+                    // capitalised words in front of the bracket are its name. (":]" is a face.)
+                    if let last = out.last, last.isLetter || last.isNumber {
+                        var words = out.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+                        var dropped = 0
+                        while let word = words.last, isLinkWord(Substring(word), first: false),
+                              dropped > 0 || word.first?.isUppercase == true {
+                            words.removeLast()
+                            dropped += 1
+                        }
+                        if dropped > 0 { out = words.joined(separator: " ") }
+                    }
                     out.append(" ")
                 }
             case "{":
@@ -86,6 +245,15 @@ extension LanguageGate {
             return !(l.hasPrefix("http://") || l.hasPrefix("https://") || l.hasPrefix("www.") || l.contains("://"))
         }
         return kept.joined(separator: " ")
+    }
+
+    /// A word a link's name is made of: capitalised, or one of the small words between
+    /// capitalised ones ("Hand of Ragnaros").
+    private static func isLinkWord(_ word: Substring, first: Bool) -> Bool {
+        guard let head = word.first else { return false }
+        if head.isUppercase { return true }
+        if first { return false }
+        return ["of", "the", "a", "an", "and", "to", "in", "for", "on", "de", "la"].contains(word.lowercased())
     }
 
     // MARK: - Script statistics

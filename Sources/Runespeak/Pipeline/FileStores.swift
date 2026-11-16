@@ -39,7 +39,8 @@ final class ErrorLog: @unchecked Sendable {
     }
 }
 
-/// chat_history.txt: every line read from the screen, plus its translation once there is one.
+/// chat_history.txt: every line read from the screen, plus its translation once there is one
+/// (with the name of the model that wrote it).
 final class ChatHistory: @unchecked Sendable {
     static let maxBytes = 8 * 1024 * 1024
 
@@ -48,13 +49,28 @@ final class ChatHistory: @unchecked Sendable {
 
     init(file: URL) { self.file = file }
 
-    func append(message: ChatMessage) {
-        write("[\(ErrorLog.stamp(message.firstSeen))] \(message.rawText)")
+    /// `replacing`: the line says again, whole, what an earlier line of the log said in part.
+    func append(message: ChatMessage, replacing: Bool = false) {
+        write("[\(ErrorLog.stamp(message.firstSeen))] " + Self.line(for: message, replacing: replacing))
     }
 
-    func append(translation: String, of message: ChatMessage) {
-        let who = ChatDisplay.senderPrefix(for: message)
-        write("[\(ErrorLog.stamp(Date()))]     → \(who)\(translation)")
+    /// A chat line as the log shows it. Rows that went out without their header row are marked
+    /// as a fragment, and the line that takes the place of earlier ones as a second reading, so
+    /// that the log does not read as if two things had been said.
+    static func line(for message: ChatMessage, replacing: Bool = false) -> String {
+        if message.isFragment { return "(조각) " + ChatDisplay.prefix(for: message) + ChatDisplay.body(for: message) }
+        return (replacing ? "(다시 읽음) " : "") + message.rawText
+    }
+
+    /// `engine`: the model or service that wrote the translation ("Sonnet"). `reused`: no
+    /// request was made for this line; the translation is that of an earlier, identical one.
+    func append(translation: String, of message: ChatMessage, engine: String?, reused: Bool = false) {
+        write("[\(ErrorLog.stamp(Date()))] " + ChatDisplay.historyLine(translation: translation, of: message, engine: engine, reused: reused))
+    }
+
+    /// A request was made for `message` and the answer was the line itself (see `TranslationEcho`).
+    func append(unchangedAnswerFor message: ChatMessage, engine: String?, reused: Bool = false) {
+        write("[\(ErrorLog.stamp(Date()))] " + ChatDisplay.historyLine(unchangedAnswerFor: message, engine: engine, reused: reused))
     }
 
     func flush() { queue.sync {} }
@@ -139,8 +155,13 @@ struct SettingsStore {
     func loadAPIKey(for provider: AIProvider) -> String? {
         let file = paths.keyFile(for: provider)
         guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
-        // An older or hand-made file may be world-readable.
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        // An older or hand-made file may be world-readable. (A file that is owner-only already
+        // is left alone: reading the key must not change anything about it.)
+        let fm = FileManager.default
+        let mode = (try? fm.attributesOfItem(atPath: file.path))?[.posixPermissions] as? NSNumber
+        if mode?.intValue != 0o600 {
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        }
         let key = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return key.isEmpty ? nil : key
     }

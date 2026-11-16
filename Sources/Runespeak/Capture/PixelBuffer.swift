@@ -69,6 +69,34 @@ struct PixelBuffer {
         return Double(hits) / Double(r.width * r.height)
     }
 
+    /// Shares of the pixels of `rect` that are black, dim and bright (strongest channel up to
+    /// 3, up to 70, above). Black means the black of an opaque panel, which is exact: a dark
+    /// scene behind a translucent panel is dim, however dark.
+    func darkness(in rect: CGRect) -> (black: Double, dim: Double, bright: Double) {
+        let r = rect.integral.intersection(CGRect(x: 0, y: 0, width: width, height: height))
+        guard r.width >= 1, r.height >= 1 else { return (0, 0, 0) }
+        var black = 0, dim = 0, bright = 0
+        for y in Int(r.minY)..<Int(r.maxY) {
+            for x in Int(r.minX)..<Int(r.maxX) {
+                let o = offset(x, y)
+                let v = max(data[o], max(data[o + 1], data[o + 2]))
+                if v <= 3 { black += 1 } else if v < 70 { dim += 1 } else { bright += 1 }
+            }
+        }
+        let n = Double(r.width * r.height)
+        return (Double(black) / n, Double(dim) / n, Double(bright) / n)
+    }
+
+    /// True when the text in `rect` stands on plain black: a chat window whose background is
+    /// opaque. Nothing of the game world shows through such a window, so no word on it can be
+    /// text of the world. Measured: rows on an opaque background are 73–87 % black with up to
+    /// 11 % dim pixels (the soft edges of the glyphs); rows on the game's translucent
+    /// background, however dark the scene behind, have next to no black pixel at all.
+    func isOpaqueBlack(in rect: CGRect) -> Bool {
+        let d = darkness(in: rect)
+        return d.black >= 0.55 && d.dim <= 0.2
+    }
+
     /// Paints over everything drawn in the hue of `colour`, sparing what is nearer to the hue of
     /// `keeping`: removes text of another colour that overlaps a chat row. The dark outline
     /// around the removed glyphs (within `reach` pixels of them) goes too, or its shapes would

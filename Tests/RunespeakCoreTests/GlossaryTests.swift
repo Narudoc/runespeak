@@ -143,6 +143,12 @@ final class GlossaryTests: XCTestCase {
         "CHANNEL|/c|/c /csay /ㅊ",
     ])
 
+    /// Places of a zone (see ZonePlacesTests for what is done with them).
+    private static let zonePlaces = tsv("zone_korean|zone_english|korean|english", [
+        "타나리스|Tanaris|가젯잔|Gadgetzan",
+        "타나리스|Tanaris|스팀휘들 항구|Steamwheedle Port",
+    ])
+
     private func installStandardFixtures() throws {
         try writeData("official_names.classic.tsv", GlossaryTests.officialClassic)
         try writeData("official_names.retail.tsv", GlossaryTests.officialRetail)
@@ -151,6 +157,8 @@ final class GlossaryTests: XCTestCase {
         try writeData("abbreviations.retail.tsv", GlossaryTests.abbreviationsRetail)
         try writeData("chat_commands.classic.tsv", GlossaryTests.commands)
         try writeData("chat_commands.retail.tsv", GlossaryTests.commands)
+        try writeData("zone_places.classic.tsv", GlossaryTests.zonePlaces)
+        try writeData("zone_places.retail.tsv", GlossaryTests.zonePlaces)
     }
 
     private func makeStore(_ flavor: GameFlavor = .classic) throws -> GlossaryStore {
@@ -179,8 +187,11 @@ final class GlossaryTests: XCTestCase {
                        ["official_names.classic.tsv", "abbreviations.classic.tsv", "chat_commands.classic.tsv"])
         XCTAssertEqual([retail.officialNames, retail.abbreviations, retail.chatCommands],
                        ["official_names.retail.tsv", "abbreviations.retail.tsv", "chat_commands.retail.tsv"])
-        XCTAssertEqual(DictionaryFiles.all.count, 7)
+        XCTAssertEqual([classic.zonePlaces, retail.zonePlaces], ["zone_places.classic.tsv", "zone_places.retail.tsv"])
+        XCTAssertEqual(DictionaryFiles.all.count, 9, "four files per flavor and the nicknames")
+        XCTAssertEqual(Set(DictionaryFiles.all).count, 9)
         XCTAssertTrue(DictionaryFiles.all.contains("nicknames.tsv"))
+        XCTAssertTrue(DictionaryFiles.all.contains("zone_places.classic.tsv") && DictionaryFiles.all.contains("zone_places.retail.tsv"))
     }
 
     func testTSVRowsFollowTheHeader() {
@@ -742,7 +753,7 @@ final class GlossaryTests: XCTestCase {
     }
 
     func testLoadWarningsNameMissingFilesAndStrayTabs() throws {
-        XCTAssertEqual(GlossaryStore(paths: paths, flavor: .classic).loadWarnings.count, 4, "nothing is there: four files missing")
+        XCTAssertEqual(GlossaryStore(paths: paths, flavor: .classic).loadWarnings.count, 5, "nothing is there: five files missing")
         try installStandardFixtures()
         let store = GlossaryStore(paths: paths, flavor: .classic)
         XCTAssertEqual(store.loadWarnings, [])
@@ -1183,6 +1194,36 @@ final class GlossaryTests: XCTestCase {
         }
     }
 
+    /// Rows that live checks of real chat showed to be missing or misleading: a town players
+    /// name by half its name, "g2g" at the end of a recruiting line, and "summon" in front of
+    /// what is summoned.
+    func testShippedDataCoversSlipsFoundInLiveChat() throws {
+        for flavor in [GameFlavor.classic, .retail] {
+            let store = try shippedStore(flavor)
+            // The half name is also a family name: the hint that tells the two apart goes along.
+            let town = names(store, "everyone get to menethil now")
+            XCTAssertEqual(town.count, 1, "\(flavor)")
+            XCTAssertTrue(town.first?.hasPrefix("메네실 항구 ↔ Menethil Harbor | Menethil(the harbour town;") ?? false, "\(flavor): \(town)")
+            for line in ["arthas menethil did nothing wrong", "king terenas menethil was a good king"] {
+                let hinted = names(store, line).first { $0.hasPrefix("메네실 항구") }
+                XCTAssertTrue(hinted?.contains("in a person's name") ?? false, "\(flavor) \(line): the model is told when it is not the town")
+                XCTAssertTrue(hinted?.contains("not the town") ?? false, "\(flavor) \(line)")
+            }
+
+            let leaving = store.hints(for: ["LF1M healer SM cath then g2g"]).abbreviations.filter { $0.abbr.lowercased() == "gtg" }
+            XCTAssertEqual(Set(leaving.map(\.english)), ["got to go", "good to go"], "\(flavor): both senses reach the model")
+            XCTAssertTrue(leaving.first { $0.english == "good to go" }?.note.contains("recruiting line") ?? false, "\(flavor)")
+
+            for line in ["summon wolf is way better than the cat", "can someone summ me"] {
+                let summon = store.hints(for: [line]).abbreviations.first { $0.abbr.lowercased() == "summ" }
+                XCTAssertEqual(summon?.korean, "소환", "\(flavor) \(line)")
+                XCTAssertTrue(summon?.note.contains("'summon X' as the name of a skill is 'X 소환'") ?? false, "\(flavor) \(line)")
+                XCTAssertTrue(summon?.note.hasPrefix("as a request or an offer") ?? false,
+                              "\(flavor) \(line): the note does not call every summon a request")
+            }
+        }
+    }
+
     /// Words that are both chat slang and game terms: the game sense is offered only where
     /// the game is the topic. "anger" alone is a feeling (the boss is "anger run" or
     /// "Angerforge"), and "no cap" is not about capturing anything.
@@ -1211,7 +1252,7 @@ final class GlossaryTests: XCTestCase {
     func testShippedDataNamesChannelsAndWordsAdvertsAsKoreanPlayersDo() throws {
         for flavor in [GameFlavor.classic, .retail] {
             let store = try shippedStore(flavor)
-            let general = store.hints(for: ["farts in general chat"]).abbreviations
+            let general = store.hints(for: ["yawns in general chat"]).abbreviations
             XCTAssertTrue(general.contains { $0.abbr == "general chat" && $0.korean == "공개 채팅" }, "\(flavor): \(general.map(\.abbr))")
             let trade = store.hints(for: ["trade chat is wild today lol"]).abbreviations
             XCTAssertTrue(trade.contains { $0.abbr == "trade chat" && $0.korean == "거래 채팅" }, "\(flavor): \(trade.map(\.abbr))")

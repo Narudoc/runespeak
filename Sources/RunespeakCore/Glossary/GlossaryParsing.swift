@@ -27,6 +27,13 @@ struct GlossaryOfficialName: Sendable, Hashable {
     var english: String
 }
 
+/// One row of zone_places.<flavor>.tsv: a place and the zone it lies in. A row without a place
+/// (`place` nil) gives one more Korean name the zone goes by.
+struct GlossaryZonePlace: Sendable, Hashable {
+    var zone: GlossaryPair
+    var place: GlossaryPair?
+}
+
 /// One row of abbreviations.<flavor>.tsv.
 struct GlossaryAbbreviationLine: Sendable, Hashable {
     var abbreviation: String
@@ -173,6 +180,8 @@ enum GlossaryParser {
     static let correctionColumns = ["source", "translation", "note"]
     static let abbreviationColumns = ["abbr", "also", "english", "korean", "note"]
     static let commandColumns = ["chat_type", "canonical", "aliases"]
+    /// zone_places.<flavor>.tsv.
+    static let zonePlaceColumns = ["zone_korean", "zone_english", "korean", "english"]
 
     static func parseOfficialNames(_ text: String) -> [GlossaryOfficialName] {
         officialNames(tsvRows(text, columns: officialColumns))
@@ -182,6 +191,23 @@ enum GlossaryParser {
         var out: [GlossaryOfficialName] = []
         for row in rows where !row[1].isEmpty && !row[2].isEmpty {
             out.append(GlossaryOfficialName(kind: row[0].lowercased(), korean: row[1], english: row[2]))
+        }
+        return out
+    }
+
+    /// zone_places.<flavor>.tsv: zone_korean, zone_english, korean, english. A row needs both
+    /// names of its zone; a place needs both of its names, and a row that has neither is the
+    /// zone's other Korean name.
+    static func parseZonePlaces(_ text: String) -> [GlossaryZonePlace] {
+        zonePlaces(tsvRows(text, columns: zonePlaceColumns))
+    }
+
+    static func zonePlaces(_ rows: [[String]]) -> [GlossaryZonePlace] {
+        var out: [GlossaryZonePlace] = []
+        out.reserveCapacity(rows.count)
+        for row in rows where !row[0].isEmpty && !row[1].isEmpty && row[2].isEmpty == row[3].isEmpty {
+            out.append(GlossaryZonePlace(zone: GlossaryPair(korean: row[0], english: row[1]),
+                                         place: row[2].isEmpty ? nil : GlossaryPair(korean: row[2], english: row[3])))
         }
         return out
     }

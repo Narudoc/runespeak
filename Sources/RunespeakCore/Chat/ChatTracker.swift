@@ -36,6 +36,18 @@ import CoreGraphics
 /// and `corrections` names the earlier reports it stands in for. A message that went out on a
 /// read OCR itself was unsure of is replaced the same way by a later read it is sure of.
 ///
+/// Rows that go out without their header row are marked as a fragment
+/// (`ChatMessage.isFragment`): the end of something somebody said, shown as read and never
+/// translated by itself, until the whole message takes its place.
+///
+/// While a menu of the game is open over the chat (`ChatMenu`), its labels stand where the
+/// channel tags are and stay put while the chat scrolls under them. Such frames are not looked
+/// at: nothing is learned from them, and the first frame after the menu has closed is fitted to
+/// what was known before. A row under a single label, a numbered channel tag that never closes
+/// and a tag with a label in it are no chat either. Rows of chat that name those labels are
+/// (people explain the settings to each other): a row that went out and is still there, a
+/// wrapped row that begins with a label's words, a label behind a sound header.
+///
 /// A name that stands right behind the end of a row, or where its last words are, can be read
 /// together with the row without OCR doubting any of it; nothing tells the two apart then,
 /// and the message goes out with the name. Names move on and chat stays: when the row has
@@ -115,6 +127,9 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
         var orphan = false
         /// Known only as a row with a name of the game world over it (`FrameLine.covered`).
         var covered = false
+        /// Taken for a wrapped row only because the row above it was not read when it
+        /// arrived: decided again once that row is known.
+        var undecidedStart = false
         /// Id of the message this line last went out in, and that message as it was compared.
         var messageID: UUID?
         var emittedKey: LineKey?
@@ -173,6 +188,8 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
     private var indentSamples: [CGFloat] = []
     private var indent: CGFloat = 0
     private var flat = false
+    /// Hash of the lines the columns were last learned from.
+    private var lastColumnSignature = 0
     private var lineHeight: CGFloat = 0
     /// Vertical distance between two consecutive text rows; 0 when unknown.
     private var rowPitch: CGFloat = 0
@@ -221,6 +238,8 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
     private var fullRows = 0
 
     private var senders = SenderMemory()
+    /// Numbered channel tags seen in sound header rows ("1. General - Some Zone"), as skeletons.
+    private var soundLabels: Set<[UInt32]> = []
     private var latestCorrections: [UUID: [UUID]] = [:]
     private var unreadableRows: UInt32 = 0
 
@@ -242,6 +261,7 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
     public func reset() {
         lock.lock(); defer { lock.unlock() }
         senders.reset()
+        soundLabels.removeAll()
         history.removeAll()
         recent.removeAll()
         frameNo = 0
@@ -262,9 +282,15 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
 
     public func ingest(_ frame: OCRFrame, now: Date) -> [ChatMessage] {
         lock.lock(); defer { lock.unlock() }
-        frameNo += 1
         latestCorrections = [:]
+        // A menu of the game is open over the chat: its labels stand where the channel tags
+        // are and stay put while the chat scrolls under them, so no row of this frame can be
+        // taken at its word. The frame does not count at all: nothing is learned from it and
+        // nothing waits through it, and the first frame after the menu has closed is fitted
+        // to what was known before it opened.
+        if menuIsOpen(over: frame) { return [] }
         let lines = prepare(frame)
+        frameNo += 1
         var anchored = false
         frameShift = nil
         var afterFade = false
@@ -340,6 +366,81 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
         return .match(j, strict: false)
     }
 
+    // MARK: - Something drawn over the chat
+
+    /// Rows the last view showed that went out as chat.
+    private func rowsOfLastView() -> [Entry] {
+        guard lastViewFrame > 0 else { return [] }
+        return history.filter { $0.lastSeenFrame == lastViewFrame && $0.reported && !$0.withheld && !$0.tentative && !$0.covered }
+    }
+
+    /// How far the rows of the last view have moved since, read off the rows that still read
+    /// as one of them did: the distance most of those agree on. nil when no row is recognised.
+    private func shiftSinceLastView(_ rows: [(key: LineKey, y: CGFloat)], known: [Entry]) -> CGFloat? {
+        guard lineHeight > 0 else { return nil }
+        var moves: [CGFloat] = []
+        for row in rows {
+            for e in known where LineSimilarity.compare(row.key, e.key).isStrict { moves.append(row.y - e.box.midY) }
+        }
+        var best: (count: Int, move: CGFloat)?
+        for move in moves {
+            let agreeing = moves.filter { abs($0 - move) < 0.35 * lineHeight }.count
+            if best == nil || agreeing > best!.count || (agreeing == best!.count && abs(move) < abs(best!.move)) {
+                best = (agreeing, move)
+            }
+        }
+        return best?.move
+    }
+
+    /// Whether the game's chat menu is open over the rows of `frame` (`ChatMenu`), judged with
+    /// what is known about the window. A row that went out as chat and is still there is chat,
+    /// whatever it names; a wrapped row that begins with the words of a label is one of the
+    /// message above it; and a row that was chat a moment ago and has a label in it now has the
+    /// label drawn over it.
+    private func menuIsOpen(over frame: OCRFrame) -> Bool {
+        var found = ChatMenu.sightings(in: frame.lines, locale: locale)
+        guard !found.isEmpty else { return false }
+        let known = rowsOfLastView()
+        let keys = frame.lines.map { LineKey(text: $0.text, parsed: ChatLineParser.parse($0.text, locale: locale, color: $0.color)) }
+        let shift = shiftSinceLastView(zip(keys, frame.lines).map { (key: $0, y: $1.box.midY) }, known: known) ?? 0
+        found = found.compactMap { sighting in
+            var sighting = sighting
+            let key = keys[sighting.line]
+            if known.contains(where: { !$0.provisional && LineSimilarity.compare(key, $0.key).isStrict }) { return nil }
+            if sighting.leads, isWrappedChat(frame.lines[sighting.line], among: frame.lines) {
+                sighting.strong = false
+            } else if !sighting.strong, lineHeight > 0,
+                      let was = known.first(where: { abs($0.box.midY + shift - sighting.y) < 0.35 * lineHeight }),
+                      !LineSimilarity.compare(key, was.key).isStrict {
+                sighting.strong = true
+            }
+            return sighting
+        }
+        return ChatMenu.isOpen(found)
+    }
+
+    /// Whether a row that begins with the words of a menu label is a wrapped row of chat: it
+    /// stands where wrapped rows start, right below a row of chat in its own colour. (A label
+    /// of the menu is white or gold and stands where the menu puts it.)
+    private func isWrappedChat(_ line: OCRLine, among lines: [OCRLine]) -> Bool {
+        let height = line.box.height
+        guard height > 0, line.box.width > 0 else { return false }
+        let rowAbove = lines.filter { $0.box.width > 0 && line.box.midY - $0.box.midY > 0.5 * height && line.box.midY - $0.box.midY < 1.6 * height }
+        guard let above = rowAbove.min(by: { $0.box.minX < $1.box.minX }), !ChatTracker.coloursDiffer(above.color, line.color) else { return false }
+        let parsed = ChatLineParser.parse(above.text, locale: locale, color: above.color)
+        guard !parsed.isDamagedHeader else { return false }
+        let right = line.box.minX - above.box.minX
+        if parsed.hasPrefix {
+            // Below a header row: the wrap indent to its right, where that is known.
+            if headerEdge < .greatestFiniteMagnitude, indent > 0, abs(above.box.minX - headerEdge) < 0.3 * height {
+                return abs(right - indent) < 0.4 * height
+            }
+            return right > -0.3 * height && right < 1.2 * height
+        }
+        // Below another wrapped row: on its column.
+        return ChatMenu.labelAtStart(of: above.text, locale: locale) == nil && abs(right) < 0.4 * height
+    }
+
     // MARK: - Fade
 
     /// True for the first frame after the chat had faded out when it shows only a few lines on
@@ -381,6 +482,14 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
     private func prepare(_ frame: OCRFrame) -> [FrameLine] {
         let sorted = frame.lines.enumerated()
             .filter { !$0.element.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            // One label of the game's chat menu (the rest of the menu lies outside the captured
+            // region): the row under it cannot be read, and the label is no chat. A wrapped row
+            // of chat that begins with the same words is.
+            .filter { item in
+                guard ChatMenu.labelAtStart(of: item.element.text, locale: locale) != nil else { return true }
+                let leads = ChatMenu.sightings(in: [item.element], locale: locale).first?.leads ?? false
+                return leads && isWrappedChat(item.element, among: frame.lines)
+            }
             .sorted { a, b in
                 let ya = a.element.box.midY, yb = b.element.box.midY
                 return ya != yb ? ya < yb : a.offset < b.offset
@@ -425,6 +534,10 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
                 }
                 let key = LineKey(text: text, parsed: parsed)
                 guard key.count > 0 else { return nil }
+                if parsed.hasPrefix, !parsed.headerBroken, parsed.channel == .publicChannel, parsed.sender != nil,
+                   piece.confidence >= ChatTracker.sureRead, soundLabels.count < 64 {
+                    soundLabels.insert(key.tag)
+                }
                 return FrameLine(text: text, parsed: parsed, key: key, color: piece.color, box: piece.box,
                                  confidence: piece.confidence)
             }
@@ -452,8 +565,17 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
         // Names floating over characters behind the window ("Some Player", "<Some Guild>").
         // One that is all its row reads as may stand where a row of chat is: it is kept as a
         // hidden row until the rows around it tell (below).
-        pieces = pieces.map { row in
-            let chat = row.compactMap { isWorldLabel($0) ? linkWithMisreadBrackets($0) : $0 }
+        // (Not what stands right below a row that ends inside a link, where its wrapped rows
+        // start: the rest of that link in the link's own colour, with its closing bracket read
+        // as a letter or not at all, "the Silver Moonl".)
+        let openLinks: [FrameLine?] = pieces.map { row in row.first { ChatLinks.leavesLinkOpen($0.text) } }
+        pieces = pieces.enumerated().map { n, row in
+            let above = n > 0 ? openLinks[n - 1] : nil
+            let chat = row.compactMap { piece -> FrameLine? in
+                guard isWorldLabel(piece) else { return piece }
+                if let above, isRestOfLink(piece, below: above) { return piece }
+                return linkWithMisreadBrackets(piece)
+            }
             guard chat.isEmpty, var hidden = row.first else { return chat }
             unreadableRows &+= 1
             hidden.covered = true
@@ -600,6 +722,15 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
         return true
     }
 
+    /// Whether `line` stands where the wrapped rows of `above` start, on the row below it.
+    private func isRestOfLink(_ line: FrameLine, below above: FrameLine) -> Bool {
+        let height = max(line.box.height, above.box.height)
+        guard height > 0, line.box.width > 0, above.box.width > 0 else { return false }
+        let down = line.box.midY - above.box.midY
+        let right = line.box.minX - above.box.minX
+        return down > 0.5 * height && down < 1.6 * height && right > -0.3 * height && right < 1.5 * height
+    }
+
     /// A row in the green of an item link that is nothing but a link ("[Some Item]") reads
     /// like a name of the world when its brackets are taken for thin letters ("ISome Iteml").
     /// No name comes out with such a letter at both ends: the row is given its brackets back.
@@ -673,7 +804,18 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
             rightLimit = max(rightLimit, l.box.maxX)
             leftEdge = min(leftEdge, l.box.minX)
         }
-        learnColumns(lines)
+        // The same read of an unchanged picture is ingested several times; it is one sample.
+        var hasher = Hasher()
+        for l in lines {
+            hasher.combine(l.text)
+            hasher.combine(Int(l.box.minX.rounded()))
+            hasher.combine(Int(l.box.minY.rounded()))
+        }
+        let signature = hasher.finalize()
+        if signature != lastColumnSignature || !sameLayout {
+            lastColumnSignature = signature
+            learnColumns(lines)
+        }
         // The dragged region is rarely much wider than the text area; this keeps a window that
         // so far only showed short lines from making every line look "full".
         if imageSize.width > 0 { rightLimit = max(rightLimit, imageSize.width * 0.55) }
@@ -699,16 +841,44 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
         for (a, b) in zip(lines, lines.dropFirst()) where tellsTheColumn(a) && !b.parsed.hasPrefix
             && abs(a.box.minX - headerEdge) <= 0.3 * lineHeight
             && !b.covered && b.parsed.timestamp == nil && b.box.width > 0
-            && b.parsed.channel != .system && b.parsed.channel != .emote {
+            && b.parsed.channel != .system && b.parsed.channel != .emote
+            && canBeWrapped(b, from: a) {
             let step = b.box.midY - a.box.midY
             let offset = b.box.minX - a.box.minX
             if step > 0, step < 1.6 * lineHeight, abs(offset) < 1.5 * lineHeight { indentSamples.append(offset) }
         }
         // Most such rows are wrapped rows; the odd system line under a chat line is not, hence
-        // the median.
-        let median = keep(&indentSamples) ?? 0
+        // the median (the lower one of an even number: a header box that reaches a few pixels
+        // left of its text makes a sample too large, never too small).
+        _ = keep(&indentSamples)
+        let median = indentSamples.isEmpty ? 0 : indentSamples.sorted()[(indentSamples.count - 1) / 2]
         indent = indentSamples.count >= 2 && median > 0.25 * lineHeight ? median : 0
         flat = indentSamples.count >= 4 && median < 0.15 * lineHeight
+    }
+
+    /// Whether the headerless row `b` right below the header row `a` may be a wrapped row of
+    /// it, for learning how the window indents: a row in another colour, one that opens with a
+    /// link or a quoted name, and what is left of a damaged header row are as likely lines of
+    /// their own on the message column (a notice that begins with a link, the speech of a
+    /// creature whose header was not recognised), and a few of those would "unlearn" the indent.
+    private func canBeWrapped(_ b: FrameLine, from a: FrameLine) -> Bool {
+        guard !b.parsed.headerBroken, let first = b.text.first else { return false }
+        if first == "[" || first == "\"" || first == "“" || first == "'" || first == "‘" { return false }
+        return !ChatTracker.coloursDiffer(a.color, b.color)
+    }
+
+    /// Whether two sampled glyph colours are colours of different chat lines. Apart from the
+    /// plain distance, two channel colours of different hue that lie close together count as
+    /// different (the pink of a public channel and the pale yellow of a creature's speech);
+    /// shades of one hue do not (guild and officer green, a row sampled a little darker).
+    static func coloursDiffer(_ a: RGBColor, _ b: RGBColor) -> Bool {
+        if ChatColors.distance(a, b) > 0.35 { return true }
+        guard let x = ChatColors.channel(for: a), let y = ChatColors.channel(for: b), x != y else { return false }
+        func hue(_ c: RGBColor) -> RGBColor {
+            let peak = max(c.r, max(c.g, c.b))
+            return peak > 0 ? RGBColor(r: c.r / peak, g: c.g / peak, b: c.b / peak) : c
+        }
+        return ChatColors.distance(hue(a), hue(b)) >= 0.2
     }
 
     /// How far right of the message column a row must start to count as a wrapped row.
@@ -849,7 +1019,15 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
     /// word or two behind the header, a class-coloured name or text of the world over the end
     /// of the row outweighs it.
     private func hasMessageColour(_ header: FrameLine) -> Bool {
-        header.parsed.body.reduce(0) { $0 + ($1.isLetter || $1.isNumber ? 1 : 0) } >= 8
+        if header.parsed.body.reduce(0, { $0 + ($1.isLetter || $1.isNumber ? 1 : 0) }) >= 8 { return true }
+        // A short message whose sampled colour is the colour of the channel its tag names:
+        // nothing else was mistaken for it.
+        guard !header.parsed.headerTag.isEmpty, header.parsed.channel != .unknown,
+              let sampled = ChatColors.channel(for: header.color) else { return false }
+        if sampled == header.parsed.channel { return true }
+        let greens: Set<ChatChannel> = [.guild, .officer], oranges: Set<ChatChannel> = [.raid, .instance, .raidWarning]
+        return (greens.contains(sampled) && greens.contains(header.parsed.channel))
+            || (oranges.contains(sampled) && oranges.contains(header.parsed.channel))
     }
 
     /// Both read with confidence and nothing alike: two different lines, not two reads of one.
@@ -1090,6 +1268,7 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
                 // one now: once is a glimpse, twice running is the row.
                 let sheds = e.reported && !e.withheld && !line.covered && line.confidence >= ChatTracker.sureRead
                     && frameNo - e.reportedFrame <= ChatTracker.shedFrames
+                    && !LanguageGate.isUnreadable(line.parsed.hasPrefix ? line.parsed.body : line.text)
                     && (e.reportedText.map { hadWorldText($0, where: line) } ?? false)
                 e.shedSightings = sheds ? e.shedSightings + 1 : 0
                 if sheds, e.shedSightings >= 2 {
@@ -1205,7 +1384,18 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
                    !startsMessage(line, above: lines[i - 1]) {
                     e.isStart = false
                 }
-                if !rowGap, previousMatchIndex == j - 1 || previousInsertBoundary == j { e.gapBefore = false }
+                if !rowGap, previousMatchIndex == j - 1 || previousInsertBoundary == j {
+                    e.gapBefore = false
+                    // Born while the row above it was not read: now that it is, the row is
+                    // judged like any other (a notice on the message column is no wrapped row).
+                    if e.undecidedStart, i > 0 {
+                        e.undecidedStart = false
+                        if !e.done, !e.isStart, !e.covered, !line.covered, !lines[i - 1].covered,
+                           startsMessage(line, above: lines[i - 1]) {
+                            e.isStart = true
+                        }
+                    }
+                }
                 previous = e
                 previousMatchIndex = j
                 previousInsertBoundary = nil
@@ -1232,6 +1422,7 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
                                   gapBefore: unknownAbove, tentative: !isLive, frame: frameNo, now: now)
                 entry.afterFade = afterFade
                 entry.covered = line.covered
+                entry.undecidedStart = !entry.isStart && above == nil && !line.covered
                 entry.orphan = isLive && !entry.isStart && i > 0
                 if boundary < m, previousInsertBoundary != boundary {
                     // First of a run inserted here; the last of the run takes this over below.
@@ -1290,7 +1481,30 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
             // line has scrolled out. System and emote lines are the exception.
             return ownColour && indented != true
         }
-        let differs = ChatColors.distance(line.color, above.color) > 0.35 && !line.text.hasPrefix("[")
+        // The colour sampled from a row is that of its text outside link brackets. A row with
+        // next to none (the rest of a link that wrapped, in the link's own colour, which may
+        // be the orange of an emote or the yellow of a notice) has no colour that says
+        // anything; a notice that begins with a link ("[Some Item]을 만들었습니다.") has.
+        let ownText = ChatLinks.hasBrackets(line.text) ? ChatLinks.lettersOutsideLinks(line.text) : Int.max
+        // The row above ends inside a link and this one stands on the column of wrapped rows,
+        // where no line of its own can start: the rest of that link, in whatever colour and
+        // however its brackets were read ("Vowl[Bring Back a Ring]").
+        if indented == true, ChatLinks.leavesLinkOpen(above.text), ChatLinks.hasBrackets(line.text) { return false }
+        // The same told by the brackets alone, wherever the box of the row begins: it closes a
+        // link it never opened, right below a row that opened one and did not close it. No
+        // line of its own begins in the middle of a link.
+        if ChatLinks.leavesLinkOpen(above.text), ChatLinks.closesUnopenedLink(line.text), line.box.minX >= above.box.minX {
+            return false
+        }
+        // The same with the closing bracket read as a letter, or not read ("the Silver Moonl
+        // pst me" in the yellow of a quest link): nothing in the row says link, but it stands
+        // exactly where wrapped rows start, right below a row that ends inside one. A notice
+        // of its own stands on the message column.
+        if indented == true, ChatLinks.leavesLinkOpen(above.text),
+           line.box.minX - headerEdge <= (indent > 0 ? indent + indentThreshold : lineHeight) {
+            return false
+        }
+        let differs = ChatTracker.coloursDiffer(line.color, above.color) && ownText >= 2
         // A system or emote line in its own colour below something else.
         if differs, ownColour { return true }
         // Its box does not show where the row starts; a row in the colour of the one above is
@@ -1299,8 +1513,11 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
         let hasGeometry = lineHeight > 0 && line.box.width > 0 && above.box.width > 0
         if let indented {
             if indented { return false }    // wrapped row
-        } else if hasGeometry, leftEdge < .greatestFiniteMagnitude, line.box.minX - leftEdge > 0.8 * lineHeight {
-            return false    // indented continuation, judged without having seen a header row
+        } else if headerEdge == .greatestFiniteMagnitude, hasGeometry, leftEdge < .greatestFiniteMagnitude,
+                  line.box.minX - leftEdge > 0.8 * lineHeight {
+            // Indented continuation, judged without having seen a header row. (Not in a window
+            // known to indent nothing: there the leftmost text ever seen proves nothing.)
+            return false
         }
         // Wrapped lines keep the colour of their message. The colour read off a header row
         // with little text behind it is not to be trusted for this.
@@ -1618,6 +1835,9 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
             guard let sender = head.parsed.sender, ChatTracker.isPlainName(sender) else { return false }
         } else if head.parsed.oddName {
             guard head.confidence >= 0.9 else { return false }
+        } else if head.parsed.unclosedTag {
+            // The tag of a channel known from sound rows, without its closing bracket.
+            guard soundLabels.contains(head.key.tag), let sender = head.parsed.sender, ChatTracker.isPlainName(sender) else { return false }
         } else if head.parsed.sender == nil, !head.parsed.headerTag.isEmpty, let colon = said.firstIndex(of: ":") {
             guard ChatTracker.isPlainName(String(said[..<colon])) else { return false }
             said = String(said[said.index(after: colon)...])
@@ -1712,7 +1932,17 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
                 && piece.unicodeScalars.first.map(ChatTracker.isSpaceless) == true
             text += glue ? piece : " " + piece
         }
-        return (text, ChatLineParser.parse(text, locale: locale, color: entries.first?.color))
+        var parsed = ChatLineParser.parse(text, locale: locale, color: entries.first?.color)
+        // A link bracket read as a thin letter, where the brackets that were read leave no
+        // doubt about it (only a whole message tells: a row may begin or end inside a link).
+        if parsed.hasPrefix, entries.count > 1 || ChatLinks.hasBrackets(parsed.body), text.hasSuffix(parsed.body) {
+            let mended = ChatLinks.mendBrackets(inBody: parsed.body)
+            if mended != parsed.body {
+                text = String(text.dropLast(parsed.body.count)) + mended
+                parsed = ChatLineParser.parse(text, locale: locale, color: entries.first?.color)
+            }
+        }
+        return (text, parsed)
     }
 
     private static func isSpaceless(_ u: Unicode.Scalar) -> Bool {
@@ -1759,6 +1989,14 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
         out.append(message)
     }
 
+    /// Whether the tag of a damaged header row can be shown as the channel of what stands
+    /// under it. A numbered tag that never closes, or one with a label of the game's menu in
+    /// it, names no channel: what reads as its name is whatever is drawn over the row.
+    private func namesItsChannel(_ head: Entry) -> Bool {
+        guard head.parsed.hasPrefix, !head.parsed.unclosedTag else { return false }
+        return head.parsed.channelLabel.flatMap { ChatMenu.labelInside($0, locale: locale) } == nil
+    }
+
     /// Rows of chat without their header row, as a message with no speaker: under the channel
     /// of the header (`head`, when its tag at least was read) or the one their colour says.
     /// `head` nil: rows that never had a header row to stand under.
@@ -1768,7 +2006,7 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
         lines.forEach { $0.done = true; $0.tentative = false }
         let unsteady = rows.filter(isChurning)
         let (body, _) = assemble(rows, eliding: unsteady)
-        let tagged = head?.parsed.hasPrefix ?? false
+        let tagged = head.map(namesItsChannel) ?? false
         let label = tagged ? head?.parsed.channelLabel : nil
         let raw = (label.map { "[\($0)] " } ?? "") + body
         // Without a readable tag the colour of the rows says which channel they are.
@@ -1777,11 +2015,22 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
         let parsed = ParsedChatLine(timestamp: nil, channel: channel, channelLabel: label,
                                     sender: nil, body: body, hasPrefix: true)
         let key = LineKey(text: raw, parsed: parsed)
-        if recent.prefix(recentCount).contains(where: { LineSimilarity.isSameMessage(key, $0) }) { return }
+        // Said before, by itself or as part of a message that went out whole: rows of old chat
+        // read again without their header row (something is drawn over it) are no news.
+        if recent.prefix(recentCount).contains(where: { LineSimilarity.isSameMessage(key, $0) || LineSimilarity.isPart(key, of: $0) }) {
+            // The rows stay unsaid, and the message stays open: somebody else may have ended on
+            // the same words. A clean read of the header row takes it up again, and it goes
+            // out whole unless that very message is out already (`revived`).
+            if let head {
+                head.provisional = true
+                head.revived = true
+            }
+            return
+        }
         head?.withheld = true
         unsteady.forEach { $0.withheld = true }
         send(ChatMessage(channel: channel, channelLabel: label, sender: nil, body: body, rawText: raw,
-                         color: first.color, firstSeen: (head ?? first).firstSeen),
+                         color: first.color, firstSeen: (head ?? first).firstSeen, isFragment: true),
              lines: lines, spoken: rows, key: key, provisional: true, into: &out)
     }
 
@@ -1805,7 +2054,7 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
                 reportRows(Array(rows), under: head, into: &out, recentCount: recentCount)
             } else if entries.count == 1, head.messageID == nil {
                 // A message of one row: all that is known is that something was said there.
-                let label = head.parsed.hasPrefix ? head.parsed.channelLabel : nil
+                let label = namesItsChannel(head) ? head.parsed.channelLabel : nil
                 let raw = (label.map { "[\($0)] " } ?? "") + ChatTracker.unreadableNotice
                 head.withheld = true
                 send(ChatMessage(channel: .unknown, channelLabel: label, sender: nil, body: ChatTracker.unreadableNotice,
@@ -1837,9 +2086,20 @@ public final class ChatTracker: ChatTracking, @unchecked Sendable {
             return
         }
         // Lines that arrived outside the live flow may be old chat laid out differently (window
-        // resized, other tab): the same message is not reported a second time.
+        // resized, other tab) or read differently (something drawn over part of it): the same
+        // message is not reported a second time, whether it reads as all of what went out or
+        // as its first row alone, under a tag that reads as something else.
         if (head.wasTentative && !head.afterFade) || head.revived,
-           recent.prefix(recentCount).contains(where: { LineSimilarity.isSameMessage(key, $0) }) {
+           recent.prefix(recentCount).contains(where: {
+               LineSimilarity.isSameMessage(key, $0) || LineSimilarity.isReRead(key, of: $0) || LineSimilarity.isReRead(head.key, of: $0)
+           }) {
+            return
+        }
+        // A second report must be the better one: what went out as language is not replaced by
+        // what OCR makes of text it could not read this time, however sure it claims to be.
+        if !earlier.isEmpty, LanguageGate.isUnreadable(parsed.body), !parsed.body.isEmpty,
+           let was = head.reportedText.map({ ChatLineParser.parse($0, locale: locale, color: head.color) }),
+           was.hasPrefix, !was.body.isEmpty, !LanguageGate.isUnreadable(was.body) {
             return
         }
         unsteady.forEach { $0.withheld = true }

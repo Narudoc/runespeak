@@ -10,10 +10,13 @@ import RunespeakCore
 /// are ignored. A koKR chat line such as "[길드] [Иван]: привет" therefore needs two models. The
 /// shipping strategy (measured with `--ocr-selftest --grid`):
 ///
-///  * koKR client: one Korean pass over the frame. Lines it is not sure about (foreign script) or
-///    whose brackets do not balance are read again with the Latin/Cyrillic model and, if that
-///    does not explain them, the Chinese/Japanese model; the Korean channel tag is kept and the
-///    rest of the line is spliced in by x position.
+///  * koKR client: one Korean pass over the frame. A message it read as Korean is final: no
+///    other model reads Hangul, and each answers with confident nonsense (digits, bars,
+///    Cyrillic) for a script it does not know. Rows it is not sure about, or in which a
+///    bracket or a letter looks misread, are shown to the Latin/Cyrillic model and, if that
+///    does not explain them, to the Chinese/Japanese model. Which model is believed for which
+///    part of a row is decided in `ScriptChoice` (RunespeakCore), word by word; letters of a
+///    script that cannot stand in a row never leave the recogniser.
 ///  * enUS client: one pass with Vision's per-line language detection (every model reads the
 ///    Latin channel tags) on an inverted grey picture; only rows that pass skipped are re-read.
 final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
@@ -62,6 +65,21 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
 
     init() { options = Options() }
     init(options: Options) { self.options = options }
+
+    /// Debugging aid for `--replay-image --trace`: receives one line per recognition pass and
+    /// per decision about a row. Nil in the app.
+    nonisolated(unsafe) static var trace: ((String) -> Void)?
+    /// With `trace`: also where each model placed every glyph of a row it was asked twice about.
+    nonisolated(unsafe) static var traceGlyphs = false
+    /// Recognition passes that threw since the process started. A second-model pass that fails
+    /// is skipped silently in the app; the command-line tools report the count, so that a
+    /// skipped pass is not mistaken for a clean result.
+    nonisolated(unsafe) private(set) static var failedPasses = 0
+    private static let failedPassLock = NSLock()
+    fileprivate static func noteFailedPass(_ error: Error, languages: [String]) {
+        failedPassLock.lock(); failedPasses += 1; failedPassLock.unlock()
+        trace?("PASS FAILED languages=\(languages): \(error)")
+    }
 
     static let koreanModel = ["ko-KR", "en-US"]
     static let latinCyrillicModel = ["en-US", "ru-RU", "es-ES", "pt-BR", "fr-FR", "de-DE"]
@@ -126,18 +144,23 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         var lines = Self.mergeIntoLines(try pass.run(languages: languages, autodetect: autodetect, region: nil))
         if options.rescue {
             switch clientLocale {
-            case .koKR: rescueKoreanClient(&lines, detected: rows, pass: pass)
+            case .koKR: rescueKoreanClient(&lines, detected: rows, pass: pass, locale: clientLocale)
             case .enUS: rescueEnglishClient(&lines, detected: rows, pass: pass)
             }
         }
 
+        // Which rows stand on plain black: asked once per row, used twice below.
+        let onBlack = lines.map { pixels.isOpaqueBlack(in: $0.box.insetBy(dx: -$0.box.height, dy: -0.15 * $0.box.height)) }
         if options.trimForeignTail {
             let all = lines
             var rereads = 0
-            lines = lines.map { line in
+            lines = lines.enumerated().map { n, line in
+                // A chat window with an opaque background shows nothing of the world: every
+                // word on the row is the row's own, whatever its colour.
+                if onBlack[n] { return line }
                 // A link that wraps ("[Blade of Eternal" / "Darkness] ...") ends this row in the
                 // link's colour: that is chat, not text of the world.
-                if Self.endsInsideLink(line, among: all) { return line }
+                if Self.endsInsideLink(line, among: all) || Self.tailContinuesBelow(line, among: all, pixels: pixels) { return line }
                 var line = line
                 if rereads < Self.maxWorldTextRereads {
                     line = withoutWorldTextInside(line, pixels: pixels, clientLocale: clientLocale) { foreign, kept in
@@ -157,13 +180,22 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
             .sorted { $0.box.minY < $1.box.minY }
             .compactMap { reading -> OCRLine? in
                 var line = reading
+                // Scripts that cannot stand in the row never leave the recogniser: the Latin
+                // model writes Cyrillic for whatever it cannot read.
+                switch clientLocale {
+                case .koKR: if !line.cyrillic { line.glyphs = ScriptChoice.withoutStrayScripts(line.glyphs) }
+                case .enUS: line.glyphs = ScriptChoice.foldLookAlikes(line.glyphs)
+                }
                 line.glyphs = Self.tidy(line.glyphs)
                 let text = line.text
                 guard !text.isEmpty else { return nil }
-                let color = line.ownColour ?? pixels.glyphColor(in: line.bodyRects()) ?? pixels.glyphColor(in: [line.box]) ?? .white
+                let color = line.ownColour ?? pixels.glyphColor(in: line.messageColourRects()) ?? pixels.glyphColor(in: [line.box]) ?? .white
                 return OCRLine(text: text, box: line.box, color: color, confidence: line.confidence)
             }
-        return OCRFrame(lines: result, imageSize: size)
+        // Most rows on plain black: the window has an opaque background. (Not all of them:
+        // what the game draws over the chat, a menu, has a panel of its own.)
+        let black = onBlack.filter { $0 }.count
+        return OCRFrame(lines: result, imageSize: size, opaqueBackground: black >= 1 && black * 2 >= onBlack.count)
     }
 
     // MARK: - Fingerprint
@@ -195,15 +227,7 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
 
     /// One glyph of a reading with its horizontal extent in image pixels. The Latin model only
     /// reports word boxes, so all glyphs of a word share one extent there.
-    struct Glyph {
-        var character: Character
-        var minX: CGFloat
-        var maxX: CGFloat
-        var spaceBefore: Bool
-        /// Where the glyph "starts" for deciding which side of a seam it is on. Not the centre:
-        /// the Chinese model stretches a bracket's box over the space that follows it.
-        var anchorX: CGFloat { minX + (maxX - minX) * 0.25 }
-    }
+    typealias Glyph = OCRGlyph
 
     /// One visual text line as read by one model (or spliced from several).
     struct Reading {
@@ -214,22 +238,19 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         var detached = false
         /// Colour of the row's own text when it had to be told from something drawn over it.
         var ownColour: RGBColor?
+        /// Accepted as Cyrillic text (see `ScriptChoice`): the only rows that may carry it.
+        var cyrillic = false
 
-        var text: String {
-            var s = ""
-            for (i, g) in glyphs.enumerated() {
-                if g.spaceBefore, i > 0 { s.append(" ") }
-                s.append(g.character)
-            }
-            return s
-        }
+        var text: String { ScriptChoice.text(glyphs) }
 
         /// Pixel rects of the text outside [brackets]. Channel tags, player names and item links
         /// are bracketed and may carry class/quality colours; what is left is the message itself,
         /// which is always drawn in the channel colour.
         func bodyRects() -> [CGRect] {
             var rects: [CGRect] = []
-            var depth = 0
+            // A row that closes a bracket it never opened starts inside a link that wrapped
+            // ("Vow][Bring Back a Ring]"): what stands in front of that bracket is link text.
+            var depth = glyphs.first(where: { $0.character == "[" || $0.character == "]" })?.character == "]" ? 1 : 0
             // Right end of the last bracketed word. Where a model reports word boxes only, the
             // ":" of "[Name]:" has the extent of the whole word and must not start a run.
             var bracketedUntil = -CGFloat.greatestFiniteMagnitude
@@ -262,6 +283,19 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
             close()
             return rects
         }
+
+        /// Where the colour of the message can be read off the row: the text outside brackets,
+        /// or, on a header row with next to nothing behind the colon ("[Guild] [Some Name]: ?"),
+        /// the channel tag, which is drawn in the colour of the message. Never the name, which
+        /// may have the colour of the speaker's class.
+        func messageColourRects() -> [CGRect] {
+            let body = bodyRects()
+            guard body.isEmpty, glyphs.count >= 6, glyphs[0].character == "[",
+                  let close = glyphs.firstIndex(where: { $0.character == "]" }), close >= 2, close <= 28,
+                  close + 1 < glyphs.count, glyphs[close + 1].character == "[" else { return body }
+            let minX = glyphs[0].minX, maxX = glyphs[close].maxX
+            return maxX - minX >= 3 ? [CGRect(x: minX, y: box.minY, width: maxX - minX, height: box.height)] : body
+        }
     }
 
     private struct Pass {
@@ -286,7 +320,12 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
                 guard !roi.isNull, roi.width > 0, roi.height > 0 else { return [] }
                 request.regionOfInterest = roi
             }
-            try handler.perform([request])
+            do {
+                try handler.perform([request])
+            } catch {
+                VisionTextRecognizer.noteFailedPass(error, languages: languages)
+                throw error
+            }
 
             // Observation boxes are normalised to the region of interest, bottom-left origin.
             func toPixels(_ n: CGRect) -> CGRect {
@@ -329,6 +368,13 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
                 glyphs[0].spaceBefore = false
                 out.append(Reading(glyphs: glyphs, box: box, confidence: Double(candidate.confidence)))
             }
+            if let trace = VisionTextRecognizer.trace {
+                trace("PASS languages=\(languages.joined(separator: ",")) region=\(region.map { "y\(Int($0.minY))..\(Int($0.maxY))" } ?? "all"): \(out.count) fragments")
+                for r in out.sorted(by: { $0.box.minY != $1.box.minY ? $0.box.minY < $1.box.minY : $0.box.minX < $1.box.minX }) {
+                    trace(String(format: "  x=%.0f..%.0f y=%.0f..%.0f conf=%.2f |%@|", r.box.minX, r.box.maxX, r.box.minY, r.box.maxY,
+                                 r.confidence, r.text))
+                }
+            }
             return out
         }
     }
@@ -344,6 +390,8 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         case "\u{FF1A}": return [":"]
         case "\u{FF1B}": return [";"]
         case "\u{3000}", "\u{00A0}": return []
+        // Nobody types a bullet: it is a full stop the model saw a little above the baseline.
+        case "\u{2022}", "\u{2219}": return ["."]
         default:
             let composed = String(c).precomposedStringWithCanonicalMapping
             return Array(composed)
@@ -404,32 +452,15 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         return g
     }
 
-    enum Script { case hangul, han, kana, cyrillic, latin, other }
+    typealias Script = ScriptChoice.Script
 
-    static func script(_ c: Character) -> Script {
-        guard let u = c.unicodeScalars.first?.value else { return .other }
-        switch u {
-        case 0xAC00...0xD7A3, 0x1100...0x11FF, 0x3130...0x318F: return .hangul
-        case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0xF900...0xFAFF: return .han
-        case 0x3040...0x30FF, 0x31F0...0x31FF, 0xFF66...0xFF9F: return .kana
-        case 0x0400...0x052F: return .cyrillic
-        case 0x41...0x5A, 0x61...0x7A, 0xC0...0x24F: return .latin
-        default: return .other
-        }
-    }
+    static func script(_ c: Character) -> Script { ScriptChoice.script(c) }
 
     private static func count(_ glyphs: [Glyph], _ scripts: Script...) -> Int {
         glyphs.reduce(0) { $0 + (scripts.contains(script($1.character)) ? 1 : 0) }
     }
 
-    private static func bracketsBalanced(_ glyphs: [Glyph]) -> Bool {
-        var depth = 0
-        for g in glyphs {
-            if g.character == "[" { depth += 1 }
-            if g.character == "]" { depth -= 1; if depth < 0 { return false } }
-        }
-        return depth == 0
-    }
+    private static func bracketsBalanced(_ glyphs: [Glyph]) -> Bool { ScriptChoice.bracketsBalanced(glyphs) }
 
     // MARK: - Line assembly
 
@@ -583,20 +614,48 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
 
     // MARK: - Rescue, koKR client
 
-    private func rescueKoreanClient(_ lines: inout [Reading], detected: [CGRect], pass: Pass) {
+    /// Which model is believed for which part of a row is decided in `ScriptChoice`; this runs
+    /// the passes it asks for.
+    private func rescueKoreanClient(_ lines: inout [Reading], detected: [CGRect], pass: Pass, locale: ClientLocale) {
         appendMissedRows(to: &lines, detected: detected)
         defer { lines.removeAll { $0.glyphs.isEmpty } }
 
+        // The bracket in front of the speaker colon is read as a thin letter on every other
+        // row. Whatever the passes below make of the row, that is mended in the end; the other
+        // model is asked first, because it tells a bracket read as "l" from a name that ends
+        // in "l" in front of a bracket that was not read.
+        defer {
+            for i in lines.indices where !lines[i].glyphs.isEmpty && !lines[i].cyrillic {
+                lines[i].glyphs = ScriptChoice.mendSpeakerBracket(lines[i].glyphs)
+            }
+        }
+
         // The Korean model answers 1.0 for text it can read (Hangul, Latin) and 0.3–0.5 for
-        // Cyrillic, Han and kana — and for small or noisy Korean, which must be left alone.
-        // It also drops accents, which now and then eats a bracket.
+        // Cyrillic, Han and kana — and for small or noisy Korean. A message it read as Korean
+        // and is sure of is final: no other model reads Hangul. (Such a row is still shown to
+        // the Latin model when its name bracket is in doubt, for that bracket alone.)
         var suspects = lines.indices.filter { i in
             let l = lines[i]
             if l.detached { return false }
-            if l.glyphs.isEmpty || !Self.bracketsBalanced(l.glyphs) { return true }
-            return l.confidence < 0.9 && !Self.looksKorean(Self.untrustedPart(of: l))
+            if l.glyphs.isEmpty { return true }
+            let balanced = Self.bracketsBalanced(l.glyphs)
+            if ScriptChoice.isSettledKorean(l.glyphs, confidence: l.confidence) {
+                return !balanced && ScriptChoice.mendSpeakerBracket(l.glyphs) != l.glyphs
+            }
+            if l.confidence < ScriptChoice.sure || !balanced { return true }
+            // Sure of the row, but a link bracket or a letter in it reads like a misread.
+            if ScriptChoice.hasLinkLookAlike(l.glyphs) || ScriptChoice.hasDigitLookAlike(l.glyphs) { return true }
+            // The row above ends inside a link and this one closes none: the Korean model
+            // skips a closing bracket where the colour changes behind it.
+            if !l.glyphs.contains(where: { $0.character == "[" || $0.character == "]" }),
+               let above = Self.rowAbove(l, among: lines),
+               above.glyphs.last(where: { $0.character == "[" || $0.character == "]" })?.character == "[" {
+                return true
+            }
+            return false
         }
         guard !suspects.isEmpty else { return }
+        Self.trace?("suspects: " + suspects.map { "y=\(Int(lines[$0].box.minY))" }.joined(separator: " "))
 
         // Latin/Cyrillic first: it is three times cheaper than the Chinese model.
         var latinFallback: [Int: Reading] = [:]
@@ -604,31 +663,42 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         if let found = try? pass.run(languages: Self.latinCyrillicModel, autodetect: false, region: region) {
             let latin = Self.mergeIntoLines(found)
             suspects.removeAll { i in
-                guard let alt = Self.counterpart(of: lines[i], in: latin) else { return false }
+                // The other model's reading of this row, and of no other: a speck beside the
+                // window that it joined to the row next to it ("D [1. General] [Some Name]:
+                // text") is the reading of that row, which has one of its own.
+                guard let alt = Self.counterpart(of: lines[i], in: latin),
+                      Self.counterpart(of: alt, in: lines)?.box == lines[i].box else { return false }
                 let original = lines[i]
-                let spliced = original.glyphs.isEmpty ? alt : Self.splice(korean: original, other: alt)
-                let foreign = Self.foreignPart(of: spliced, korean: original)
-                let cyrillic = Self.count(foreign, .cyrillic)
-                // A few Cyrillic look-alikes turn up in misread Latin; Russian fills the line.
-                if cyrillic >= 2, cyrillic * 4 >= Self.count(foreign, .latin) {
-                    lines[i] = spliced
+                let height = original.glyphs.isEmpty ? alt.box.height : original.box.height
+                let choice = ScriptChoice.chooseLatin(korean: original.glyphs, koreanConfidence: original.confidence,
+                                                      latin: alt.glyphs, latinConfidence: alt.confidence, height: height)
+                if Self.trace != nil, Self.traceGlyphs {
+                    Self.trace?("  K: " + original.glyphs.map { "\($0.character)\(Int($0.minX))-\(Int($0.maxX))" }.joined(separator: " "))
+                    Self.trace?("  L: " + alt.glyphs.map { "\($0.spaceBefore ? "_" : "")\($0.character)\(Int($0.minX))-\(Int($0.maxX))" }.joined(separator: " "))
+                }
+                switch choice {
+                case .korean(let glyphs):
+                    Self.trace?("y=\(Int(original.box.minY)) korean stands: |\(ScriptChoice.text(glyphs))|")
+                    lines[i].glyphs = glyphs
+                    // Read the same way by both models: no guess, whatever the first one said.
+                    if alt.confidence > original.confidence, ScriptChoice.agree(korean: glyphs, latin: alt.glyphs, height: height) {
+                        lines[i].confidence = alt.confidence
+                        return true
+                    }
+                    // A guess at Han or kana comes back at 0.3: the Chinese model gets a look.
+                    return original.confidence >= 0.45
+                case .cyrillic(let glyphs, let confidence):
+                    Self.trace?("y=\(Int(original.box.minY)) cyrillic: |\(ScriptChoice.text(glyphs))|")
+                    lines[i] = Self.replaced(original, by: alt, glyphs: glyphs, confidence: confidence)
+                    lines[i].cyrillic = true
                     return true
+                case .latinFallback(let glyphs, let confidence):
+                    Self.trace?("y=\(Int(original.box.minY)) latin fallback: |\(ScriptChoice.text(glyphs))|")
+                    latinFallback[i] = Self.replaced(original, by: alt, glyphs: glyphs, confidence: confidence)
+                    return false
+                case .unreadable:
+                    return false
                 }
-                // A Latin reading may only replace the Korean one if it mends the brackets
-                // without dropping part of the line.
-                let complete = spliced.glyphs.count * 10 >= original.glyphs.count * 9
-                if original.confidence >= 0.9 {
-                    // Sent here for its brackets only.
-                    if complete, Self.bracketsBalanced(spliced.glyphs) { lines[i] = spliced }
-                    return true
-                }
-                // Hangul outside the trusted parts is something the Latin model cannot have read.
-                if alt.confidence >= 0.9, Self.count(foreign, .latin) >= 3,
-                   Self.count(Self.untrustedPart(of: original), .hangul) == 0,
-                   complete, Self.bracketsBalanced(spliced.glyphs) {
-                    latinFallback[i] = spliced
-                }
-                return false
             }
         }
 
@@ -640,45 +710,35 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
             if let found = try? pass.run(languages: Self.chineseJapaneseModel, autodetect: false, region: rest) {
                 let cjk = Self.mergeIntoLines(found)
                 suspects.removeAll { i in
-                    guard cjkSuspects.contains(i), let alt = Self.counterpart(of: lines[i], in: cjk) else { return false }
+                    guard cjkSuspects.contains(i), let alt = Self.counterpart(of: lines[i], in: cjk),
+                          Self.counterpart(of: alt, in: lines)?.box == lines[i].box else { return false }
                     let original = lines[i]
-                    let spliced = original.glyphs.isEmpty ? alt : Self.splice(korean: original, other: alt)
-                    let foreign = Self.foreignPart(of: spliced, korean: original)
-                    let cjkCount = Self.count(foreign, .han, .kana)
-                    // Han guesses for Latin text come out as a letter here and there; real
-                    // Chinese or Japanese fills the line.
-                    guard cjkCount >= 1, cjkCount * 3 >= Self.count(foreign, .latin) else { return false }
-                    lines[i] = spliced
+                    let glyphs = original.glyphs.isEmpty
+                        ? alt.glyphs : ScriptChoice.splice(korean: original.glyphs, other: alt.glyphs, height: original.box.height)
+                    let foreign = ScriptChoice.foreignPart(of: glyphs, korean: original.glyphs)
+                    guard ScriptChoice.isChineseOrJapanese(korean: original.glyphs, foreign: foreign) else { return false }
+                    lines[i] = Self.replaced(original, by: alt, glyphs: glyphs, confidence: alt.confidence)
                     return true
                 }
             }
         }
-        // Neither Cyrillic nor CJK: a Latin line the Korean model was unsure of.
+        // Neither Cyrillic nor CJK: a Latin line the Korean model could not read.
         for i in suspects { if let latin = latinFallback[i] { lines[i] = latin } }
     }
 
-    /// Glyphs of a Korean reading outside its trusted ranges.
-    private static func untrustedPart(of korean: Reading) -> [Glyph] {
-        let kept = trustedKoreanRanges(korean.glyphs)
-        return korean.glyphs.indices.filter { i in !kept.contains { $0.contains(i) } }.map { korean.glyphs[$0] }
+    /// `korean` with its message taken from `other`: the confidence is that of the reading the
+    /// message came from, never the larger of the two (which made a guess look like a clean
+    /// read).
+    private static func replaced(_ korean: Reading, by other: Reading, glyphs: [Glyph], confidence: Double) -> Reading {
+        var result = other
+        result.glyphs = glyphs
+        result.box = korean.glyphs.isEmpty ? other.box : korean.box.union(other.box)
+        result.confidence = confidence
+        result.detached = korean.detached
+        return result
     }
 
-    /// True when the text is Korean rather than the Korean model's guess at another script:
-    /// guesses are a soup of symbols, digits and the odd syllable.
-    static func looksKorean(_ glyphs: [Glyph]) -> Bool {
-        var hangul = 0, other = 0
-        for g in glyphs {
-            switch script(g.character) {
-            case .hangul: hangul += 1
-            case .latin: break                      // names, "raid", "dps" inside Korean sentences
-            default:
-                let c = g.character
-                if c == "[" || c == "]" || c == ":" || c == "." || c == "," || c == "?" || c == "!" || c == "~" { break }
-                other += 1
-            }
-        }
-        return hangul >= 2 && hangul * 10 >= (hangul + other) * 7
-    }
+    static func looksKorean(_ glyphs: [Glyph]) -> Bool { ScriptChoice.looksKorean(glyphs) }
 
     /// The Chinese model tends to swallow the ": " between "[name]" and the message.
     static func restoreColon(_ glyphs: [Glyph]) -> [Glyph] {
@@ -699,208 +759,10 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         return glyphs
     }
 
-    /// Glyphs of a spliced line that did not come from the Korean reading.
-    private static func foreignPart(of spliced: Reading, korean: Reading) -> [Glyph] {
-        let kept = trustedKoreanRanges(korean.glyphs)
-        guard !kept.isEmpty else { return spliced.glyphs }
-        var own: [Glyph] = []
-        for r in kept { own += korean.glyphs[r] }
-        // Kept glyphs are copied verbatim, so position and character identify them.
-        return spliced.glyphs.filter { g in
-            !own.contains { $0.character == g.character && $0.minX == g.minX && $0.maxX == g.maxX }
-        }
-    }
-
-    /// Index ranges of a low-confidence Korean reading that are still trustworthy: the parts of a
-    /// koKR chat line that are Korean whatever the speaker's language — the channel tag
-    /// ("[길드]", "[2. 거래]"), a Korean speaker name, and the verb phrase before the colon
-    /// ("님의 귓속말:", "의 외침:", "의 말:").
-    static func trustedKoreanRanges(_ g: [Glyph]) -> [Range<Int>] {
-        var ranges: [Range<Int>] = []
-        guard !g.isEmpty else { return ranges }
-        var i = 0
-
-        func closingBracket(from start: Int) -> Int? {
-            var j = start + 1
-            while j < g.count, j - start <= 26 {
-                if g[j].character == "]" { return j }
-                if g[j].character == "[" { return nil }
-                j += 1
-            }
-            return nil
-        }
-        /// Hangul words directly after index `from`, ending in a colon ("님의 귓속말:").
-        func verbPhrase(from start: Int) -> Int? {
-            var j = start
-            var hangul = 0
-            while j < g.count, j - start <= 10 {
-                if g[j].character == ":" { return hangul >= 1 ? j : nil }
-                guard script(g[j].character) == .hangul else { return nil }
-                hangul += 1
-                j += 1
-            }
-            return nil
-        }
-
-        if g[0].character == "[", let end = closingBracket(from: 0) {
-            let inner = Array(g[1..<end])
-            if isChannelTag(inner) || isKoreanName(inner) { ranges.append(0..<(end + 1)) }
-            i = end + 1
-        }
-        if i < g.count, let colon = verbPhrase(from: i) {
-            ranges.append(i..<(colon + 1))
-            i = colon + 1
-        } else if i > 0, i < g.count, g[i].character == "[", let end = closingBracket(from: i) {
-            if isKoreanName(Array(g[(i + 1)..<end])) {
-                var upper = end + 1
-                if upper < g.count, g[upper].character == ":" { upper += 1 }
-                ranges.append(i..<upper)
-                i = upper
-                if i < g.count, let colon = verbPhrase(from: i) { ranges.append(i..<(colon + 1)) }
-            } else if let colon = verbPhrase(from: end + 1) {
-                ranges.append((end + 1)..<(colon + 1))
-            }
-        }
-
-        // A speaker phrase is trusted wherever it stands: the bracket before it may have been
-        // misread ("[Garroshl의 외침:").
-        if !ranges.contains(where: { r in g[r].contains { $0.character == ":" } }) {
-            var j = 0
-            scan: while j < g.count, j < 40 {
-                guard script(g[j].character) == .hangul else { j += 1; continue }
-                var end = j
-                while end < g.count, script(g[end].character) == .hangul { end += 1 }
-                if end < g.count, g[end].character == ":",
-                   speakerPhrases.contains(String(g[j..<end].map(\.character))),
-                   !ranges.contains(where: { $0.overlaps(j..<(end + 1)) }) {
-                    ranges.append(j..<(end + 1))
-                    ranges.sort { $0.lowerBound < $1.lowerBound }
-                    break scan
-                }
-                j = end
-            }
-        }
-
-        // Adjacent ranges read better as one.
-        var merged: [Range<Int>] = []
-        for r in ranges {
-            if let last = merged.last, last.upperBound == r.lowerBound {
-                merged[merged.count - 1] = last.lowerBound..<r.upperBound
-            } else {
-                merged.append(r)
-            }
-        }
-        return merged
-    }
-
-    /// koKR CHAT_*_GET phrases between the speaker and the message, spaces removed.
-    private static let speakerPhrases: Set<String> = [
-        "님의귓속말", "의귓속말", "에게귓속말", "님에게귓속말", "의외침", "의말", "님의말", "님의외침",
-    ]
-
-    /// "길드", "2. 거래", "1. 일반 - 오그리마", "공격대 경보".
-    private static func isChannelTag(_ inner: [Glyph]) -> Bool {
-        var rest = inner[...]
-        // Optional channel number.
-        var digits = 0
-        while let f = rest.first, f.character.isASCII, f.character.isNumber, digits < 2 { rest = rest.dropFirst(); digits += 1 }
-        if digits > 0 {
-            guard rest.first?.character == "." else { return false }
-            rest = rest.dropFirst()
-        }
-        var hangul = 0
-        for g in rest {
-            if script(g.character) == .hangul { hangul += 1 } else if g.character != "-" && g.character != "·" { return false }
-        }
-        return hangul >= 2
-    }
-
-    /// Hangul only, optionally "이름-서버".
-    private static func isKoreanName(_ inner: [Glyph]) -> Bool {
-        guard inner.count >= 2, inner.count <= 20 else { return false }
-        return inner.allSatisfy { script($0.character) == .hangul || $0.character == "-" }
-            && count(inner, .hangul) >= 2
-    }
-
-    /// Keeps the trusted Korean parts of `korean` and takes everything else from `other`.
-    ///
-    /// The two readings are aligned on the bracket or colon that ends a trusted part when both
-    /// models saw it (their boxes for the same glyph overlap), and by x position otherwise.
-    static func splice(korean: Reading, other: Reading) -> Reading {
-        let kept = trustedKoreanRanges(korean.glyphs)
-        var result = other
-        result.box = korean.box.union(other.box)
-        result.confidence = max(korean.confidence, other.confidence)
-        guard !kept.isEmpty, !other.glyphs.isEmpty else { return result }
-
-        let k = korean.glyphs, o = other.glyphs
-        // Kept small: glyph boxes are often those of the whole word, so the bracket that closes
-        // the NEXT word ("[길드] [Иван]") starts only a space away from the mark looked for, and
-        // taking it for the twin drops the speaker's name.
-        let tolerance = korean.box.height * 0.15
-
-        /// Index in `o` (at or after `from`) of the glyph that is the same mark as `mark`.
-        func twin(of mark: Glyph, from: Int) -> Int? {
-            var best: Int? = nil
-            var bestGap = CGFloat.greatestFiniteMagnitude
-            var j = from
-            while j < o.count {
-                if o[j].character == mark.character {
-                    let gap = max(0, max(o[j].minX - mark.maxX, mark.minX - o[j].maxX))
-                    if gap <= tolerance, gap < bestGap { bestGap = gap; best = j }
-                }
-                j += 1
-            }
-            return best
-        }
-
-        var out: [Glyph] = []
-        var cursor = 0
-        for range in kept {
-            let first = k[range.lowerBound], last = k[range.upperBound - 1]
-            var start: Int
-            if range.lowerBound == 0 {
-                start = 0
-            } else if k[range.lowerBound - 1].character == "]", let j = twin(of: k[range.lowerBound - 1], from: cursor) {
-                start = j + 1
-            } else {
-                start = o[cursor...].firstIndex { $0.anchorX >= first.minX - 1 } ?? o.count
-            }
-            start = max(start, cursor)
-
-            var end: Int
-            if last.character == "]" || last.character == ":", let j = twin(of: last, from: start) {
-                end = j + 1
-            } else {
-                // The Korean model stretches a closing bracket's box over the gap that follows.
-                var edge = last.maxX
-                if last.character == "]" || last.character == ":" {
-                    edge = min(edge, last.minX + korean.box.height * 0.35)
-                }
-                end = o[start...].firstIndex { $0.anchorX >= edge - 1 } ?? o.count
-            }
-            out += o[cursor..<start]
-            out += k[range]
-            cursor = max(end, start)
-        }
-        out += o[cursor...]
-        result.glyphs = out
-        return result
-    }
-
     // MARK: - Text of the world over a chat row
 
     /// Glyph index ranges of the space-separated words of a reading.
-    private static func words(_ glyphs: [Glyph]) -> [Range<Int>] {
-        var out: [Range<Int>] = []
-        var start = 0
-        for i in glyphs.indices where i > 0 && glyphs[i].spaceBefore {
-            out.append(start..<i)
-            start = i
-        }
-        if start < glyphs.count { out.append(start..<glyphs.count) }
-        return out
-    }
+    private static func words(_ glyphs: [Glyph]) -> [Range<Int>] { ScriptChoice.words(glyphs) }
 
     private static func rect(of range: Range<Int>, in line: Reading) -> CGRect {
         let minX = line.glyphs[range].map(\.minX).min() ?? line.box.minX
@@ -911,15 +773,42 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
     /// True when the row right below `line` closes a bracket it never opened: `line` ends
     /// inside a link that wraps, even if its own opening bracket was misread.
     static func endsInsideLink(_ line: Reading, among lines: [Reading]) -> Bool {
+        guard let next = rowBelow(line, among: lines),
+              let first = next.glyphs.first(where: { $0.character == "[" || $0.character == "]" }) else { return false }
+        return first.character == "]"
+    }
+
+    /// The row right above `line`, if any.
+    private static func rowAbove(_ line: Reading, among lines: [Reading]) -> Reading? {
         let h = line.box.height
-        guard h > 0 else { return false }
-        let below = lines.filter {
+        guard h > 0 else { return nil }
+        return lines.filter {
+            !$0.detached && !$0.glyphs.isEmpty && $0.box.midY < line.box.midY - 0.5 * h && $0.box.midY > line.box.midY - 1.8 * h
+                && abs($0.box.minX - line.box.minX) < 2.5 * h
+        }.max { $0.box.midY < $1.box.midY }
+    }
+
+    /// The row right below `line` on the column of wrapped rows, if any.
+    private static func rowBelow(_ line: Reading, among lines: [Reading]) -> Reading? {
+        let h = line.box.height
+        guard h > 0 else { return nil }
+        return lines.filter {
             !$0.detached && $0.box.midY > line.box.midY + 0.5 * h && $0.box.midY < line.box.midY + 1.8 * h
                 && abs($0.box.minX - line.box.minX) < 2.5 * h
         }.min { $0.box.midY < $1.box.midY }
-        guard let next = below,
-              let first = next.glyphs.first(where: { $0.character == "[" || $0.character == "]" }) else { return false }
-        return first.character == "]"
+    }
+
+    /// True when the last word of `line` and the first word of the row below it are drawn in
+    /// one colour that is not the colour of the row: a link of any link colour (item quality,
+    /// quest, spell, achievement) that wraps. Its brackets need not have been read.
+    static func tailContinuesBelow(_ line: Reading, among lines: [Reading], pixels: PixelBuffer) -> Bool {
+        guard let next = rowBelow(line, among: lines), next.box.minX > line.box.minX + 0.15 * line.box.height else { return false }
+        let mine = words(line.glyphs), theirs = words(next.glyphs)
+        guard mine.count >= 3, let last = mine.last, let first = theirs.first,
+              let tail = pixels.glyphColor(in: [rect(of: last, in: line)]),
+              let head = pixels.glyphColor(in: [rect(of: first, in: next)]),
+              let own = pixels.glyphColor(in: [rect(of: mine[0], in: line)]) else { return false }
+        return PixelBuffer.chromaDistance(tail, head) < 0.2 && PixelBuffer.chromaDistance(tail, own) > otherColourDistance
     }
 
     /// Names floating over characters and other text of the game world show through the chat
@@ -953,7 +842,16 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
             // A wrapped row of a chat message. System text is left alone: it mixes colours.
             guard words.count >= 3 else { return line }
             let head = words[0].lowerBound..<words[1].upperBound
-            guard let colour = pixels.glyphColor(in: [Self.rect(of: head, in: line)]),
+            var sample = [Self.rect(of: head, in: line)]
+            if line.glyphs[head].contains(where: { $0.character == "[" || $0.character == "]" }) {
+                // The row begins with a link, which has a colour of its own: the colour of the
+                // row is that of the text outside brackets. "[Some Item]을 만들었습니다." is a
+                // notice of the game in the colour of its text, however white its link; a row
+                // that is all link has nothing that could be cut.
+                sample = line.bodyRects()
+                guard !sample.isEmpty else { return line }
+            }
+            guard let colour = pixels.glyphColor(in: sample),
                   let channel = ChatColors.channel(for: colour), channel != .system, channel != .emote else { return line }
             reference = colour
             firstCuttable = 2
@@ -1110,6 +1008,11 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
             // "[Some Name]xxxx": a speech header ("[Name] yells:") that no longer reads as one.
             let opensWithName = line.glyphs[0].character == "[" && line.glyphs[1].character.isLetter
             guard words.count >= 3 || opensWithName else { return line }
+            // "[Some Item]을 만들었습니다.": a notice of the game that begins with a link. Its
+            // own text, outside the brackets, is in a system colour.
+            if opensWithName, let own = pixels.glyphColor(in: line.bodyRects()), ChatColors.channel(for: own) == .system {
+                return line
+            }
             mustBecomeHeader = opensWithName
             reference = pixels.glyphColor(in: [line.box])
             if let dominant = reference, Self.isWorldColour(dominant),
@@ -1174,12 +1077,21 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
     /// blacked out.
     private func reread(_ line: Reading, without foreign: RGBColor, keeping kept: RGBColor, pixels: PixelBuffer,
                         preprocess: Options.Preprocess, upscale: CGFloat, languages: [String], autodetect: Bool) -> Reading? {
+        reread(line, pixels: pixels, preprocess: preprocess, upscale: upscale, languages: languages, autodetect: autodetect) { strip in
+            strip.erase(colour: foreign, keeping: kept, reach: max(2, Int(line.box.height / 12)))
+        }
+    }
+
+    /// Reads the row of `line` again from a copy of its strip of the picture, changed by `edit`
+    /// and drawn `upscale` times as large.
+    private func reread(_ line: Reading, pixels: PixelBuffer, preprocess: Options.Preprocess, upscale: CGFloat,
+                        languages: [String], autodetect: Bool, edit: (inout PixelBuffer) -> Void) -> Reading? {
         // The rows above and below come along whole: half a row of cut-off glyphs disturbs the reading.
         let pad = max(3, line.box.height)
         let top = max(0, Int((line.box.minY - pad).rounded(.down)))
         let bottom = min(pixels.height, Int((line.box.maxY + pad).rounded(.up)))
         guard bottom - top >= 8, var strip = pixels.strip(top..<bottom) else { return nil }
-        strip.erase(colour: foreign, keeping: kept, reach: max(2, Int(line.box.height / 12)))
+        edit(&strip)
         switch preprocess {
         case .none: break
         case .maxChannel: strip.flattenToMaxChannel(inverted: false)
@@ -1196,6 +1108,8 @@ final class VisionTextRecognizer: TextRecognizing, @unchecked Sendable {
         guard var best = candidates.min(by: { abs($0.box.minX - line.box.minX) < abs($1.box.minX - line.box.minX) }),
               abs(best.box.minX - line.box.minX) < line.box.height else { return nil }
         best.box = best.box.offsetBy(dx: 0, dy: CGFloat(top))
+        // The same model's second reading has the same habit with the bracket of a name.
+        best.glyphs = ScriptChoice.mendSpeakerBracket(best.glyphs)
         return best
     }
 

@@ -2320,13 +2320,13 @@ final class ChatTrackerHiddenRowTests: XCTestCase {
     /// thin letters: no name of the world, and a row of its message.
     func testGreenLinkRowWithBracketsReadAsLettersStaysInItsMessage() {
         let green = RGBColor(r: 0.11, g: 1, b: 0)
-        for link in ["IMoonsteel Broadswordl", "lMoonsteel BroadswordI", "[Moonsteel Broadsword]"] {
+        for link in ["IAshwood Cutlassl", "lAshwood CutlassI", "[Ashwood Cutlass]"] {
             let scroll = Scroll()
             scroll.show(3, frames: 4)
-            scroll.add("[1. 공개 - 도시] [Brann Oakheart]: LOOKING TO BUY")
+            scroll.add("[1. 공개 - 도시] [Brann Oakheart]: WANT TO BUY")
             scroll.log.append(Scroll.Row(text: link, color: green, x: Layout.wrappedX))
             scroll.show(5, frames: 4)
-            XCTAssertEqual(scroll.said.map(\.body), ["LOOKING TO BUY [Moonsteel Broadsword]"], link)
+            XCTAssertEqual(scroll.said.map(\.body), ["WANT TO BUY [Ashwood Cutlass]"], link)
         }
     }
 

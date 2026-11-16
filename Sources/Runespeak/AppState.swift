@@ -18,7 +18,9 @@ enum PipelineStatus: Equatable {
         switch self {
         case .starting: return "시작하는 중…"
         case .running: return "채팅을 읽고 있습니다"
-        case .needsScreenRecordingPermission: return "macOS의 화면 기록 허용이 꺼져 있습니다 · 시스템 설정 → 개인정보 보호 및 보안 → 화면 및 시스템 오디오 녹음에서 번역기를 허용한 뒤 앱을 새로 띄워 주세요"
+        // The switch in System Settings can look on while this build is still refused: macOS ties the
+        // permission to the build's signature, and an ad-hoc signed update is a different build to it.
+        case .needsScreenRecordingPermission: return "지금 설치된 Runespeak에는 화면 기록이 허용되어 있지 않습니다 · [시스템 설정 열기]에서 Runespeak을 켠 뒤 [다시 실행]을 눌러 주세요. 스위치가 이미 켜져 있다면(앱을 새 버전으로 바꾼 뒤) 껐다가 다시 켜거나, 목록에서 [−]로 지우고 새로 허용해 주세요"
         case .needsRegion: return "읽을 채팅창 위치가 아직 없습니다 · 게임을 띄운 상태로 [채팅창 위치 잡기]를 누르면 게임 화면에서 바로 고를 수 있습니다"
         case .pausedGameNotVisible: return "대기 중 · 화면에서 게임 채팅창을 찾을 수 없습니다"
         case .error(let m): return "오류: \(m)"

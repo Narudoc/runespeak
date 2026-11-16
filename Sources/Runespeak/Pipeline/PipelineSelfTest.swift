@@ -212,9 +212,13 @@ enum PipelineSelfTest {
         }
         if await !runQueueFaults() { failed = true }
         if await !runQueueRecovery() { failed = true }
+        if await !runFragments() { failed = true }
+        if await !runEchoes() { failed = true }
         if await !runProviderSwitch() { failed = true }
+        if await !runQueueRequestsOfTheirOwn() { failed = true }
         if !runProviders() { failed = true }
         if !runStorage() { failed = true }
+        if !runLedger() { failed = true }
         print(failed ? "\n결과: 실패" : "\n결과: 통과")
         return failed ? 1 : 0
     }
@@ -702,6 +706,20 @@ enum PipelineSelfTest {
             let short = chat(.guild, "Jaina", "inv pls")
             memo.store(.init(text: "초대 좀", note: nil, engine: nil), for: short, reader: .korean)
             expect(memo.lookup(short, reader: .korean) == nil, "아주 짧은 말은 앞뒤 맥락을 타므로 기억하지 않음")
+            // A line that went out with the places of its zone as hints (`zone`) names a place
+            // of that zone: said in another zone's channel it is asked about again.
+            let dig = chat(.publicChannel, "Sylvanas", "LF1M tank for the dig site quest")
+            memo.store(.init(text: "모래톱 발굴지 퀘스트 탱커 1명 구함", note: nil, engine: "Haiku"), for: dig, reader: .korean, zone: "Tanaris")
+            expect(memo.lookup(dig, reader: .korean, zone: "Tanaris")?.text == "모래톱 발굴지 퀘스트 탱커 1명 구함"
+                   && memo.lookup(dig, reader: .korean, zone: "Feralas") == nil
+                   && memo.lookup(dig, reader: .korean) == nil
+                   && memo.lookup(repost, reader: .korean, zone: "Tanaris") == nil
+                   && memo.lookup(repost, reader: .korean)?.text == "화산 심장부 힐러 2명 구함",
+                   "지역의 장소가 힌트로 함께 나간 번역은 그 지역 채널에서만 다시 씀 (장소 힌트가 없는 줄은 어느 지역에서나)")
+            memo.remove(dig, reader: .korean, zone: "Feralas")
+            let stillThere = memo.lookup(dig, reader: .korean, zone: "Tanaris") != nil
+            memo.remove(dig, reader: .korean, zone: "Tanaris")
+            expect(stillThere && memo.lookup(dig, reader: .korean, zone: "Tanaris") == nil, "지역이 붙은 기억도 그 지역 것만 지움")
             for n in 0..<(TranslationMemo.capacity + 50) {
                 memo.store(.init(text: "t", note: nil, engine: nil), for: chat(.guild, "A", "filler line number \(n)"), reader: .korean)
             }
@@ -725,6 +743,322 @@ enum PipelineSelfTest {
             let few = TranslationPolicy.catchUp(Array(entries.prefix(6)), groups: [.publicChannel, .general], reader: .korean, limit: 30)
             expect(few == [0, 3], "이미 번역됐거나 실패한 줄, 한국어 글, 시스템 글, 다른 탭의 글은 건드리지 않음")
         }
+        return ok
+    }
+
+    // MARK: - Rows without their header row, and the message that replaces them
+
+    /// The app's own path for a line that arrives: policy, queue, the list. A wrapped row that
+    /// went out without its header row is shown and never sent; the whole message takes its
+    /// place and is translated once; a line that is replaced while it waits is not sent at all.
+    private static func runFragments() async -> Bool {
+        print("[머리줄 없이 나간 줄 · 다시 읽은 줄]")
+        var ok = true
+        func expect(_ condition: Bool, _ what: String) {
+            print("  \(condition ? "통과" : "실패")  \(what)")
+            if !condition { ok = false }
+        }
+        func chat(_ sender: String?, _ body: String, fragment: Bool = false, channel: ChatChannel = .publicChannel) -> ChatMessage {
+            let label = "1. 공개 - 도시"
+            return ChatMessage(channel: channel, channelLabel: label, sender: sender, body: body,
+                               rawText: "[\(label)] " + (sender.map { "[\($0)]: " } ?? "") + body, color: .white, firstSeen: Date(),
+                               isFragment: fragment)
+        }
+        func wait(until done: () -> Bool) async {
+            let deadline = Date().addingTimeInterval(10)
+            while !done(), Date() < deadline { try? await Task.sleep(nanoseconds: 20_000_000) }
+        }
+        var settings = AppSettings()
+        settings.enabledGroups = Set(ChannelGroup.allCases)
+
+        let fragment = chat(nil, "cute where is it from", fragment: true)
+        let whole = chat("Brann", "that owl pet is so cute where is it from")
+        expect(!TranslationPolicy.shouldTranslate(fragment, settings: settings) && TranslationPolicy.shouldTranslate(whole, settings: settings),
+               "머리줄 없이 나간 줄(조각)은 번역 요청하지 않고, 온전한 메시지만 요청")
+        expect(!TranslationPolicy.shouldTranslate(chat("Brann", "Vow][Bring Back a Ring][The Marrow Span]"), settings: settings)
+               && !TranslationPolicy.shouldTranslate(chat("Brann", "o» 7ЛУ t Ф1."), settings: settings)
+               && !TranslationPolicy.shouldTranslate(chat("Brann", "CE024| EE", channel: .guild), settings: settings)
+               && TranslationPolicy.shouldTranslate(chat("Brann", "wassup"), settings: settings),
+               "링크뿐인 줄과 읽지 못한 글자 부스러기는 번역 요청하지 않음")
+
+        // The list and the queue, driven the way AppController.receive drives them.
+        let translator = ScriptedTranslator { _, _, _ in }
+        var entries: [ChatEntry] = []
+        let queue = TranslationQueue(
+            translator: { translator },
+            context: { _ in TranslationRequestContext(reader: .korean, flavor: .classic, model: .haiku) },
+            deliver: { outcomes in
+                for outcome in outcomes {
+                    guard let index = entries.lastIndex(where: { $0.id == outcome.id }), entries[index].state == .pending else { continue }
+                    entries[index].state = outcome.state
+                }
+            })
+        func receive(_ message: ChatMessage, replacing earlier: [UUID] = []) {
+            var entry = ChatEntry(message: message, state: .original)
+            queue.cancel(earlier)
+            if TranslationPolicy.shouldTranslate(message, settings: settings) {
+                entry.state = .pending
+                queue.enqueue(message)
+            }
+            entries.place(entry, replacing: earlier)
+        }
+        let before = chat("Jaina", "anyone selling linen cloth")
+        receive(before)
+        receive(fragment)
+        await wait { queue.isIdle }
+        expect(entries.count == 2 && entries[1].state == .original && translator.calls.flatMap(\.bodies) == [before.body],
+               "조각은 원문 그대로 보이고 번역 요청은 나가지 않음")
+        expect(OverlayChatFormat.originalLine(for: fragment) == "[1. 공개 - 도시] … cute where is it from"
+               && ChatHistory.line(for: fragment) == "(조각) [1. 공개 - 도시] … cute where is it from"
+               && ChatHistory.line(for: whole, replacing: true) == "(다시 읽음) " + whole.rawText
+               && ChatHistory.line(for: whole) == whole.rawText,
+               "조각은 화면과 기록에 조각으로 표시되고, 자리를 대신한 줄은 기록에 다시 읽은 줄로 표시")
+        receive(whole, replacing: [fragment.id])
+        await wait { queue.isIdle }
+        var translated = false
+        if case .translated = entries.last?.state { translated = true }
+        expect(entries.count == 2 && entries[1].id == whole.id && translated
+               && translator.calls.flatMap(\.bodies) == [before.body, whole.body],
+               "온전한 메시지가 조각의 자리를 대신하고 한 번만 번역됨 (요청 \(translator.calls.count)번)")
+
+        // A line that is replaced while it still waits to be sent costs no request.
+        let unsure = chat("Thrall", "need 1 rnore dps for rnara")
+        let sure = chat("Thrall", "need 1 more dps for mara")
+        translator.hold()
+        let blocker = chat("Varian", "lf enchanter pst me")
+        receive(blocker)
+        await wait { !translator.calls.isEmpty && translator.calls.last?.bodies == [blocker.body] }
+        receive(unsure)
+        receive(sure, replacing: [unsure.id])
+        translator.release()
+        await wait { queue.isIdle }
+        let sent = translator.calls.flatMap(\.bodies)
+        expect(!sent.contains(unsure.body) && sent.filter { $0 == sure.body }.count == 1
+               && entries.map(\.id) == [before.id, whole.id, blocker.id, sure.id],
+               "보내기 전에 다시 읽힌 줄은 요청하지 않고, 대신한 줄만 한 번 번역")
+        return ok
+    }
+
+    // MARK: - Answers that say the line over again
+
+    /// Answers a line whose body holds "SAME" with the line itself, in other letter case and
+    /// with other punctuation; a typed emote with its action behind the marker; the rest with
+    /// a translation.
+    final class EchoingTranslator: Translating, @unchecked Sendable {
+        private let lock = NSLock()
+        private var _sent: [String] = []
+        var sent: [String] { lock.withLock { _sent } }
+
+        func engineName(for context: TranslationRequestContext) -> String { "Echo" }
+        func translateIncoming(_ messages: [ChatMessage], context: TranslationRequestContext) async throws -> [UUID: TranslationOutput] {
+            lock.withLock { _sent += messages.map(\.body) }
+            return Dictionary(uniqueKeysWithValues: messages.map { message in
+                let text: String
+                if message.body.hasPrefix("/me ") {
+                    text = "(행동) " + message.body.dropFirst(4).capitalized + "."
+                } else if message.body.contains("SAME") {
+                    text = message.body.lowercased() + " !"
+                } else {
+                    text = "번역: \(message.body)"
+                }
+                return (message.id, TranslationOutput(text: text))
+            })
+        }
+        func retranslate(_ message: ChatMessage, previous: String?, context: TranslationRequestContext) async throws -> TranslationOutput {
+            TranslationOutput(text: message.body)
+        }
+        func translateOutgoing(_ text: String, to language: String, context: TranslationRequestContext) async throws -> String { text }
+    }
+
+    /// A translator that hands a line back as it was has not translated it: the line stays in
+    /// the original, nothing is remembered or logged as its translation, it is asked about
+    /// once only, and switching its tab on does not ask again.
+    private static func runEchoes() async -> Bool {
+        print("[원문과 같은 답]")
+        var ok = true
+        func expect(_ condition: Bool, _ what: String) {
+            print("  \(condition ? "통과" : "실패")  \(what)")
+            if !condition { ok = false }
+        }
+        func chat(_ body: String, sender: String = "Brann") -> ChatMessage {
+            ChatMessage(channel: .publicChannel, channelLabel: "1. 공개 - 도시", sender: sender, body: body,
+                        rawText: "[1. 공개 - 도시] [\(sender)]: \(body)", color: .white, firstSeen: Date())
+        }
+        func wait(until done: () -> Bool) async {
+            let deadline = Date().addingTimeInterval(10)
+            while !done(), Date() < deadline { try? await Task.sleep(nanoseconds: 20_000_000) }
+        }
+
+        // The app's own handling of an answer (AppController.apply), on a list, a memo and a log.
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent("runespeak-selftest-\(UUID().uuidString)", isDirectory: true)
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: folder) }
+        let log = folder.appendingPathComponent("chat_history.txt")
+        let history = ChatHistory(file: log)
+        let translator = EchoingTranslator()
+        var entries: [ChatEntry] = []
+        var memo = TranslationMemo()
+        var answeredUnchanged: Set<UUID> = []
+        var outcomes: [TranslationQueue.Outcome] = []
+        let queue = TranslationQueue(
+            translator: { translator },
+            context: { _ in TranslationRequestContext(reader: .korean, flavor: .classic, model: .haiku) },
+            deliver: { delivered in
+                outcomes += delivered
+                for outcome in delivered {
+                    guard let index = entries.lastIndex(where: { $0.id == outcome.id }), entries[index].state == .pending else { continue }
+                    entries[index].state = outcome.state
+                    entries[index].engine = outcome.unchanged ? nil : outcome.engine
+                    if outcome.unchanged {
+                        answeredUnchanged.insert(outcome.id)
+                        memo.store(.unchanged(engine: outcome.engine), for: entries[index].message, reader: .korean)
+                        history.append(unchangedAnswerFor: entries[index].message, engine: outcome.engine)
+                    } else if case .translated(let text) = outcome.state {
+                        memo.store(.init(text: text, note: nil, engine: outcome.engine), for: entries[index].message, reader: .korean)
+                        history.append(translation: text, of: entries[index].message, engine: outcome.engine)
+                    }
+                }
+            })
+        // (AppController.beginTranslation: a line whose answer is at hand is not sent.)
+        func receive(_ message: ChatMessage) {
+            history.append(message: message)
+            if let hit = memo.lookup(message, reader: .korean) {
+                if hit.unchanged {
+                    answeredUnchanged.insert(message.id)
+                    history.append(unchangedAnswerFor: message, engine: hit.engine, reused: true)
+                    entries.append(ChatEntry(message: message, state: .original))
+                } else {
+                    history.append(translation: hit.text, of: message, engine: hit.engine, reused: true)
+                    entries.append(ChatEntry(message: message, state: .translated(hit.text), engine: hit.engine))
+                }
+                return
+            }
+            entries.append(ChatEntry(message: message, state: .pending))
+            queue.enqueue(message)
+        }
+
+        let same = chat("SAME old chant of the tribe")
+        let emote = chat("/me pokes the sleeping bear", sender: "Mira")
+        let plain = chat("anyone selling linen cloth today")
+        [same, emote, plain].forEach(receive)
+        await wait { queue.isIdle }
+        func outcome(_ message: ChatMessage) -> TranslationQueue.Outcome? { outcomes.last { $0.id == message.id } }
+        func entry(_ message: ChatMessage) -> ChatEntry? { entries.first { $0.id == message.id } }
+
+        expect(entry(same)?.state == .original && entry(same)?.engine == nil && outcome(same)?.unchanged == true,
+               "원문과 같은 답(대소문자·문장부호만 다름)은 번역으로 치지 않고 원문 그대로 표시")
+        expect(entry(emote)?.state == .original && outcome(emote)?.unchanged == true,
+               "/me 줄도 행동 글이 그대로 돌아오면 번역으로 치지 않음")
+        var translated = false
+        if case .translated = entry(plain)?.state { translated = true }
+        expect(translated && outcome(plain)?.unchanged == false && entry(plain)?.engine == "Echo",
+               "같은 요청의 다른 줄은 그대로 번역됨")
+        expect(translator.sent.filter { $0 == same.body }.count == 1 && translator.sent.filter { $0 == emote.body }.count == 1
+               && outcomes.filter { $0.id == same.id }.count == 1,
+               "원문과 같은 답이 온 줄은 다시 요청하지 않음 (보낸 줄 \(translator.sent.count)개)")
+        expect(memo.lookup(same, reader: .korean)?.unchanged == true && memo.lookup(emote, reader: .korean)?.unchanged == true
+               && memo.lookup(plain, reader: .korean) == .init(text: "번역: \(plain.body)", note: nil, engine: "Echo"),
+               "번역 기억에 번역은 번역으로, 원문과 같은 답은 '번역 없음'으로 남음")
+
+        history.flush()
+        let lines = ((try? String(contentsOf: log, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+        func after(_ stampEnd: String) -> String { String(stampEnd.dropFirst("[2026-01-01 00:00:00] ".count)) }
+        let records = lines.map(after)
+        expect(lines.count == 6 && lines.allSatisfy { $0.hasPrefix("[") }
+               && records.filter { $0.hasPrefix("    → ") } == ["    → [Echo] Brann: 번역: \(plain.body)"],
+               "기록의 번역 줄(→)은 진짜 번역 하나뿐이고 모델 이름이 붙음")
+        expect(records.contains("    = [Echo] Brann: \(same.body)  (원문과 같은 답 — 번역 없음)")
+               && records.contains("    = [Echo] Mira: \(emote.body)  (원문과 같은 답 — 번역 없음)"),
+               "원문과 같은 답은 기록에 번역이 아닌 줄(=)로, 물어본 모델 이름과 어느 줄인지(원문)와 함께 남음")
+
+        // The same line again, from the same speaker and from another: it is not paid for twice.
+        let sentBefore = translator.sent.count
+        let repeats = [chat(same.body), chat(same.body, sender: "Odo"), chat(same.body.uppercased() + "!!", sender: "Brann")]
+        repeats.forEach(receive)
+        await wait { queue.isIdle }
+        history.flush()
+        let reusedRecords = ((try? String(contentsOf: log, encoding: .utf8)) ?? "").split(separator: "\n").map { after(String($0)) }
+            .filter { $0.hasPrefix("    = [Echo·재사용] ") }
+        expect(translator.sent.count == sentBefore && repeats.allSatisfy { entry($0)?.state == .original }
+               && repeats.allSatisfy { answeredUnchanged.contains($0.id) } && reusedRecords.count == 3
+               && reusedRecords.contains("    = [Echo·재사용] Odo: \(same.body)  (원문과 같은 답 — 번역 없음)"),
+               "원문과 같은 답이 온 줄이 또 올라오면 다시 요청하지 않고 원문 그대로 (요청 \(translator.sent.count - sentBefore)건 추가)")
+        // Another model gets its own say: the memo is emptied when the model changes.
+        var afterSwitch = memo
+        afterSwitch.removeAll()
+        expect(afterSwitch.lookup(same, reader: .korean) == nil, "모델을 바꾸면 '번역 없음' 기억도 지워져 새 모델에 다시 물음")
+
+        // Asking for a careful retranslation by hand.
+        let pieceOfChat = ChatMessage(channel: .publicChannel, channelLabel: "1. 공개 - 도시", sender: nil, body: "nice what a day",
+                                      rawText: "[1. 공개 - 도시] nice what a day", color: .white, firstSeen: Date(), isFragment: true)
+        let gameNotice = ChatMessage(channel: .system, channelLabel: nil, sender: nil, body: "You receive loot", rawText: "You receive loot",
+                                     color: .white, firstSeen: Date())
+        expect(TranslationPolicy.canRetranslate(ChatEntry(message: plain, state: .translated("x")))
+               && TranslationPolicy.canRetranslate(ChatEntry(message: same, state: .original))
+               && TranslationPolicy.canRetranslate(ChatEntry(message: plain, state: .failed("x")))
+               && !TranslationPolicy.canRetranslate(ChatEntry(message: pieceOfChat, state: .original))
+               && !TranslationPolicy.canRetranslate(ChatEntry(message: gameNotice, state: .original))
+               && !TranslationPolicy.canRetranslate(ChatEntry(message: plain, state: .pending)),
+               "다시 번역은 온전한 채팅 줄에만 (머리줄 없이 읽힌 조각·시스템 글·번역 중인 줄 제외)")
+        expect(TranslationPolicy.noteForUnchangedRetranslation("  오크어 인사말이라 번역할 말이 없습니다.\n") == "오크어 인사말이라 번역할 말이 없습니다."
+               && TranslationPolicy.noteForUnchangedRetranslation("  ") == nil && TranslationPolicy.noteForUnchangedRetranslation(nil) == nil,
+               "다시 번역이 원문과 같은 답이어도 모델의 설명은 줄에 남음")
+
+        // A translation of several lines is still one record.
+        history.append(translation: "첫 줄\n둘째 줄", of: plain, engine: "Echo", reused: true)
+        history.flush()
+        let last = ((try? String(contentsOf: log, encoding: .utf8)) ?? "").split(separator: "\n").last.map { after(String($0)) }
+        expect(last == "    → [Echo·재사용] Brann: 첫 줄 둘째 줄", "기억에서 다시 쓴 번역은 재사용으로 표시되고, 기록 한 건은 한 줄")
+
+        // What goes along with later requests as the chat before: whole, readable lines only.
+        func shown(_ message: ChatMessage, _ state: TranslationState = .original) -> ChatEntry { ChatEntry(message: message, state: state) }
+        let piece = ChatMessage(channel: .publicChannel, channelLabel: "1. 공개 - 도시", sender: nil, body: "nice what a day",
+                                rawText: "[1. 공개 - 도시] nice what a day", color: .white, firstSeen: Date(), isFragment: true)
+        let notice = ChatMessage(channel: .system, channelLabel: nil, sender: nil, body: "You receive loot", rawText: "You receive loot",
+                                 color: .white, firstSeen: Date())
+        expect(TranslationPolicy.belongsInContext(shown(plain, .translated("x"))) && TranslationPolicy.belongsInContext(shown(same))
+               && TranslationPolicy.belongsInContext(shown(chat("길드 분들 안녕하세요")))
+               && !TranslationPolicy.belongsInContext(shown(piece)) && !TranslationPolicy.belongsInContext(shown(chat("E7| ЛФ 9t.")))
+               && !TranslationPolicy.belongsInContext(shown(plain, .failed("x"))) && !TranslationPolicy.belongsInContext(shown(notice)),
+               "다음 요청의 앞 대화에는 온전히 읽힌 채팅 줄만 (조각·부스러기·실패한 줄·시스템 글 제외)")
+
+        // Switching the tab off and on: lines that were answered are not sent again.
+        let never = ChatEntry(message: chat("LFG scholomance mage here"), state: .original)
+        let listed = entries + [never]
+        let again = TranslationPolicy.catchUp(listed, groups: [.publicChannel], reader: .korean, limit: 30, except: answeredUnchanged)
+        // (Without that list: the two lines answered unchanged, their three repeats, and the new one.)
+        expect(again == [listed.count - 1]
+               && TranslationPolicy.catchUp(listed, groups: [.publicChannel], reader: .korean, limit: 30).count == 6,
+               "탭을 다시 켜도 이미 답을 받은 줄은 다시 보내지 않음 (아직 보낸 적 없는 줄만)")
+
+        // A retranslation that says the line over again puts "no translation" in the place of
+        // the earlier translation.
+        let countBefore = memo.count
+        memo.store(.init(text: "옛 번역", note: nil, engine: "Echo"), for: plain, reader: .korean)
+        memo.store(.unchanged(engine: "Opus"), for: plain, reader: .korean)
+        expect(memo.lookup(plain, reader: .korean) == .unchanged(engine: "Opus") && memo.count == countBefore,
+               "다시 번역이 원문과 같은 답이면 옛 번역 대신 '번역 없음'이 기억됨")
+        memo.remove(plain, reader: .korean)
+        memo.remove(chat("never stored anywhere at all"), reader: .korean)
+        expect(memo.lookup(plain, reader: .korean) == nil && memo.count == countBefore - 1, "기억에서 한 줄만 지울 수 있음")
+
+        // The history file keeps its size limit with the new lines: one record per line, the
+        // newest kept, the cut at a line break.
+        let bounded = folder.appendingPathComponent("bounded.txt")
+        for n in 0..<300 {
+            let message = chat("line number \(n) of a long evening")
+            appendLine("[stamp] " + ChatHistory.line(for: message) + "\n", to: bounded, limit: 6000)
+            appendLine("[stamp] " + ChatDisplay.historyLine(translation: "긴 저녁의 \(n)번째 줄\n둘째 줄".replacingOccurrences(of: "\n", with: " "),
+                                                            of: message, engine: n % 2 == 0 ? "Sonnet" : "Haiku", reused: n % 7 == 0) + "\n",
+                       to: bounded, limit: 6000)
+        }
+        let kept = ((try? String(contentsOf: bounded, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+        let size = ((try? fm.attributesOfItem(atPath: bounded.path))?[.size] as? Int) ?? -1
+        expect(size > 0 && size <= 6400 && kept.allSatisfy { $0.hasPrefix("[stamp] ") }
+               && kept.last == "[stamp]     → [Haiku] Brann: 긴 저녁의 299번째 줄 둘째 줄"
+               && kept.contains { $0.contains("→ [Sonnet·재사용] ") },
+               "모델 이름이 붙은 기록도 크기 제한을 지키고 줄 단위로 잘림 (\(size)바이트, \(kept.count)줄)")
         return ok
     }
 
@@ -785,6 +1119,24 @@ enum PipelineSelfTest {
                && store.loadAPIKey(for: .claude) == "test-key-claude-0000"
                && !fm.fileExists(atPath: paths.keyFile(for: .openai).path),
                "키는 제공자별 파일에 (앞뒤 공백 제거)")
+
+        // Reading the key leaves an owner-only file exactly as it is (a debug tool that only
+        // reads must not touch the user's folder); a file anyone can read is closed.
+        func changeTime(_ url: URL) -> (Int, Int)? {
+            var info = stat()
+            return stat(url.path, &info) == 0 ? (info.st_ctimespec.tv_sec, info.st_ctimespec.tv_nsec) : nil
+        }
+        let keyFile = paths.keyFile(for: .claude)
+        let changedBefore = changeTime(keyFile)
+        Thread.sleep(forTimeInterval: 0.03)
+        _ = store.loadAPIKey(for: .claude)
+        let changedAfter = changeTime(keyFile)
+        let untouched = changedBefore != nil && changedBefore?.0 == changedAfter?.0 && changedBefore?.1 == changedAfter?.1
+        try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: keyFile.path)
+        let stillRead = store.loadAPIKey(for: .claude) == "test-key-claude-0000"
+        let mode = ((try? fm.attributesOfItem(atPath: keyFile.path))?[.posixPermissions] as? NSNumber)?.intValue
+        expect(untouched && stillRead && mode == 0o600,
+               "키를 읽기만 해서는 키 파일이 바뀌지 않음 (누구나 읽을 수 있는 파일만 소유자 전용으로 고침)")
 
         for candidate in AIProvider.allCases {
             settings.provider = candidate
@@ -957,6 +1309,266 @@ enum PipelineSelfTest {
         return ok
     }
 
+    // MARK: - Queue: a batch the translator sends as more than one request
+
+    /// Sends the lines of a zone's channel apart from the others, one request per zone, the
+    /// way `LLMTranslator` sends lines that carry places of their zone apart from the rest.
+    /// Handed lines of more than one such group at once it does what `LLMTranslator` does:
+    /// one request after the other, and a request that fails only leaves its lines without
+    /// an answer unless nothing at all was translated. A request is answered as the script
+    /// says, once it is let through.
+    final class GroupingTranslator: Translating, @unchecked Sendable {
+        struct Request {
+            var group: String
+            var bodies: [String]
+            var at: Date
+        }
+        /// `nth`: which request for lines of `group` this is, counted from 1.
+        typealias Script = @Sendable (_ group: String, _ nth: Int, _ bodies: [String]) throws -> Void
+
+        private let lock = NSLock()
+        private var _requests: [Request] = []
+        private var _handed: [[String]] = []
+        private var _held: Set<String> = []
+        private var _running = 0
+        private var _mostRunning = 0
+        private let script: Script
+
+        init(_ script: @escaping Script = { _, _, _ in }) { self.script = script }
+
+        /// The requests made so far.
+        var requests: [Request] { lock.withLock { _requests } }
+        func requests(for group: String) -> [Request] { requests.filter { $0.group == group } }
+        /// The lines the queue handed over, call by call.
+        var handed: [[String]] { lock.withLock { _handed } }
+        var mostRunning: Int { lock.withLock { _mostRunning } }
+        /// Requests for lines of `group` are not answered until it is released.
+        func hold(_ group: String) { lock.withLock { _ = _held.insert(group) } }
+        func release(_ group: String) { lock.withLock { _ = _held.remove(group) } }
+
+        /// The zone a line's channel is named after ("1. General - Tanaris"); "" without one.
+        static func group(of message: ChatMessage) -> String {
+            guard message.channel == .publicChannel, let label = message.channelLabel, let dash = label.range(of: " - ") else { return "" }
+            return String(label[dash.upperBound...])
+        }
+
+        func incomingRequests(for messages: [ChatMessage]) -> [[ChatMessage]] {
+            var order: [String] = []
+            var groups: [String: [ChatMessage]] = [:]
+            for message in messages {
+                let group = Self.group(of: message)
+                if groups[group] == nil { order.append(group) }
+                groups[group, default: []].append(message)
+            }
+            // The lines without a zone first, as `LLMTranslator` has them.
+            return (order.filter(\.isEmpty) + order.filter { !$0.isEmpty }).compactMap { groups[$0] }
+        }
+
+        func engineName(for context: TranslationRequestContext) -> String { "Grouping" }
+        func translateIncoming(_ messages: [ChatMessage], context: TranslationRequestContext) async throws -> [UUID: TranslationOutput] {
+            lock.withLock { _handed.append(messages.map(\.body)) }
+            var out: [UUID: TranslationOutput] = [:]
+            var failure: Error?
+            for group in incomingRequests(for: messages) {
+                do {
+                    try await request(group)
+                    for message in group { out[message.id] = TranslationOutput(text: "ok: \(message.body)") }
+                } catch {
+                    if failure == nil { failure = error }
+                }
+            }
+            if out.isEmpty, let failure { throw failure }
+            return out
+        }
+        private func request(_ lines: [ChatMessage]) async throws {
+            let group = Self.group(of: lines[0])
+            let bodies = lines.map(\.body)
+            let nth: Int = lock.withLock {
+                _requests.append(Request(group: group, bodies: bodies, at: Date()))
+                _running += 1
+                _mostRunning = max(_mostRunning, _running)
+                return _requests.filter { $0.group == group }.count
+            }
+            defer { lock.withLock { _running -= 1 } }
+            while lock.withLock({ _held.contains(group) }) { try await Task.sleep(nanoseconds: 10_000_000) }
+            try script(group, nth, bodies)
+        }
+        func retranslate(_ message: ChatMessage, previous: String?, context: TranslationRequestContext) async throws -> TranslationOutput {
+            TranslationOutput(text: "ok")
+        }
+        func translateOutgoing(_ text: String, to language: String, context: TranslationRequestContext) async throws -> String { text }
+    }
+
+    /// A translator may send some lines of a batch apart from the others
+    /// (`Translating.incomingRequests`). The queue hands over one such request at a time:
+    /// when only one of them fails, that failure is dealt with as what it is (a rate limit
+    /// pauses and is told, a refusal is narrowed down to its line, a time-out is not asked
+    /// again), and what the other translated is shown when it arrives.
+    private static func runQueueRequestsOfTheirOwn() async -> Bool {
+        print("[번역 대기열 · 따로 나가는 요청]")
+        var ok = true
+        func expect(_ condition: Bool, _ what: String) {
+            print("  \(condition ? "통과" : "실패")  \(what)")
+            if !condition { ok = false }
+        }
+        func plain(_ body: String) -> ChatMessage {
+            ChatMessage(channel: .guild, channelLabel: "Guild", sender: "Thrall", body: body, rawText: "[Guild] [Thrall]: \(body)",
+                        color: .white, firstSeen: Date())
+        }
+        func placed(_ body: String, zone: String = "Tanaris") -> ChatMessage {
+            ChatMessage(channel: .publicChannel, channelLabel: "1. General - \(zone)", sender: "Rexxar", body: body,
+                        rawText: "[1. General - \(zone)] [Rexxar]: \(body)", color: .white, firstSeen: Date())
+        }
+        func wait(seconds: TimeInterval = 10, until done: () -> Bool) async {
+            let deadline = Date().addingTimeInterval(seconds)
+            while !done(), Date() < deadline { try? await Task.sleep(nanoseconds: 20_000_000) }
+        }
+        /// Every state shown for a line, in order: one translation of its own words, once.
+        var shown: [UUID: [TranslationState]] = [:]
+        var errors: [TranslationError] = []
+        func makeQueue(_ translator: GroupingTranslator) -> TranslationQueue {
+            shown = [:]
+            errors = []
+            let queue = TranslationQueue(
+                translator: { translator },
+                context: { _ in TranslationRequestContext(reader: .korean, flavor: .classic, model: .haiku) },
+                deliver: { $0.forEach { shown[$0.id, default: []].append($0.state) } })
+            queue.onError = { errors.append($0) }
+            return queue
+        }
+        func translatedOnce(_ message: ChatMessage) -> Bool { shown[message.id] == [.translated("ok: \(message.body)")] }
+        func gaps(_ requests: [GroupingTranslator.Request]) -> [TimeInterval] {
+            zip(requests.dropFirst(), requests).map { $0.at.timeIntervalSince($1.at) }
+        }
+        func seconds(_ values: [TimeInterval]) -> String { values.map { String(format: "%.2f", $0) }.joined(separator: ", ") }
+
+        // Each request of the translator is a request of the queue; lines of one kind are one.
+        do {
+            let translator = GroupingTranslator()
+            let queue = makeQueue(translator)
+            let lines = [plain("hello everyone here"), placed("LF2M for the ruins quest"), plain("see you all tonight"), placed("anyone at the oasis")]
+            lines.forEach(queue.enqueue)
+            await wait { queue.isIdle }
+            expect(Set(translator.handed) == [[lines[0].body, lines[2].body], [lines[1].body, lines[3].body]] && translator.requests.count == 2,
+                   "번역기가 따로 보내는 줄(지역 채널의 줄)은 대기열도 따로 넘김 (요청 \(translator.requests.count)번)")
+            expect(lines.allSatisfy(translatedOnce), "섞여 들어온 네 줄 모두 제 번역을 한 번씩 받음")
+            let before = translator.handed.count
+            let alike = (0..<TranslationQueue.maxBatch).map { plain("fine line \($0)") }
+            alike.forEach(queue.enqueue)
+            await wait { queue.isIdle }
+            expect(translator.handed.count == before + 1 && translator.handed.last == alike.map(\.body) && alike.allSatisfy(translatedOnce),
+                   "따로 보낼 줄이 없는 묶음은 전과 같이 한 요청")
+        }
+
+        // One of the two requests meets a rate limit, twice.
+        do {
+            let translator = GroupingTranslator { group, nth, _ in
+                if group == "Tanaris", nth <= 2 { throw TranslationError.rateLimited }
+            }
+            let queue = makeQueue(translator)
+            queue.timing.rateLimitPause = 0.3
+            queue.timing.rateLimitMaxPause = 0.3
+            let lines = [plain("hello everyone here"), placed("LF2M for the ruins quest"), plain("see you all tonight")]
+            lines.forEach(queue.enqueue)
+            await wait { queue.isIdle }
+            let pauses = gaps(translator.requests(for: "Tanaris"))
+            expect(lines.allSatisfy(translatedOnce) && translator.requests(for: "").count == 1,
+                   "한 요청만 한도에 걸려도 세 줄 모두 번역되고, 이미 번역된 줄은 다시 보내지 않음")
+            expect(errors == [.rateLimited, .rateLimited], "그 요청의 한도 오류가 걸릴 때마다 알림으로 전달됨 (\(errors.count)번)")
+            expect(pauses.count == 2 && pauses.allSatisfy { $0 >= 0.25 },
+                   "한도에 걸린 요청은 곧바로 다시 보내지 않고 쉬었다가 보냄 (간격 \(seconds(pauses))초)")
+        }
+
+        // One of the two requests is refused because of one of its two lines, while chat goes on.
+        do {
+            let translator = GroupingTranslator { _, _, bodies in
+                if bodies.contains(where: { $0.contains("BAD") }) { throw TranslationError.refused }
+            }
+            let queue = makeQueue(translator)
+            ["", "Tanaris"].forEach(translator.hold)
+            let first = [plain("hello everyone here"), placed("BAD words about the ruins"), placed("LF2M for the ruins quest")]
+            first.forEach(queue.enqueue)
+            await wait { translator.requests.count == 2 }
+            let more = [plain("anyone on tonight"), plain("back in five")]
+            more.forEach(queue.enqueue)
+            ["", "Tanaris"].forEach(translator.release)
+            await wait { queue.isIdle }
+            expect(shown[first[1].id] == [.failed(TranslationError.refused.userMessage)] && translatedOnce(first[2]),
+                   "거절당한 요청의 두 줄 중 문제의 줄만 거절로 실패하고 다른 줄은 번역됨")
+            expect(([first[0]] + more).allSatisfy(translatedOnce) && errors == [.refused],
+                   "다른 요청의 줄과 그동안 들어온 줄도 모두 번역되고, 거절 알림은 한 번")
+        }
+
+        // One of the two requests, a single line, times out: it may be billed all the same.
+        do {
+            let translator = GroupingTranslator { group, _, _ in
+                if group == "Tanaris" { throw TranslationError.timedOut }
+            }
+            let queue = makeQueue(translator)
+            let lines = [plain("hello everyone here"), placed("LF2M for the ruins quest")]
+            lines.forEach(queue.enqueue)
+            await wait { queue.isIdle }
+            let asked = translator.requests(for: "Tanaris").count
+            expect(translatedOnce(lines[0]) && shown[lines[1].id] == [.failed(TranslationError.timedOut.userMessage)] && asked == 1
+                   && errors == [.timedOut],
+                   "시간 초과된 한 줄짜리 요청은 다시 보내지 않고 시간 초과로 표시 (요청 \(asked)번), 다른 요청의 줄은 번역됨")
+        }
+
+        // One of the two requests does not get through: a pause, then once more.
+        do {
+            let translator = GroupingTranslator { group, nth, _ in
+                if group == "Tanaris", nth == 1 { throw TranslationError.network("끊김") }
+            }
+            let queue = makeQueue(translator)
+            queue.timing.networkPause = 0.3
+            let lines = [plain("hello everyone here"), placed("LF2M for the ruins quest")]
+            lines.forEach(queue.enqueue)
+            await wait { queue.isIdle }
+            let pauses = gaps(translator.requests(for: "Tanaris"))
+            expect(lines.allSatisfy(translatedOnce) && errors == [.network("끊김")] && pauses.count == 1 && pauses[0] >= 0.25,
+                   "네트워크 오류가 난 요청은 알리고, 쉬었다가 한 번 더 보냄 (간격 \(seconds(pauses))초)")
+        }
+
+        // One of the two requests is slow: the other neither waits for it to come back before
+        // it goes out, nor are its translations kept until then.
+        for slow in ["Tanaris", ""] {
+            let translator = GroupingTranslator()
+            let queue = makeQueue(translator)
+            queue.timing.holdWhileBusy = 30
+            translator.hold(slow)
+            let lines = [plain("hello everyone here"), placed("LF2M for the ruins quest")]
+            let quick = slow.isEmpty ? lines[1] : lines[0], late = slow.isEmpty ? lines[0] : lines[1]
+            lines.forEach(queue.enqueue)
+            await wait(seconds: 5) { shown[quick.id] != nil && translator.requests.count == 2 }
+            let early = translatedOnce(quick) && shown[late.id] == nil && translator.requests.count == 2
+            translator.release(slow)
+            await wait { queue.isIdle }
+            expect(early && translatedOnce(late),
+                   "\(slow.isEmpty ? "다른 줄" : "지역 채널 줄")의 요청이 늦어도 나머지 요청은 나란히 나가고, 그 번역은 바로 표시")
+        }
+
+        // Three requests: two at a time, and the lines that wait are neither lost nor sent twice.
+        do {
+            let translator = GroupingTranslator()
+            let queue = makeQueue(translator)
+            let groups = ["", "Tanaris", "Feralas"]
+            groups.forEach(translator.hold)
+            let lines = [plain("hello everyone here"), placed("LF2M for the ruins quest"), placed("boat is leaving in a minute", zone: "Feralas"),
+                         plain("see you all tonight"), placed("anyone at the oasis")]
+            lines.forEach(queue.enqueue)
+            await wait { translator.requests.count == TranslationQueue.maxInFlight }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            let out = translator.requests.count
+            groups.forEach(translator.release)
+            await wait { queue.isIdle }
+            expect(out == TranslationQueue.maxInFlight && translator.mostRunning == TranslationQueue.maxInFlight
+                   && Set(translator.handed) == [[lines[0].body, lines[3].body], [lines[1].body, lines[4].body], [lines[2].body]],
+                   "세 요청으로 나뉘는 묶음도 한 번에 \(TranslationQueue.maxInFlight)개까지만 나감 (요청 \(translator.requests.count)번)")
+            expect(lines.allSatisfy(translatedOnce), "차례를 기다린 줄까지 다섯 줄 모두 제 번역을 한 번씩 받음")
+        }
+        return ok
+    }
+
     // MARK: - Files
 
     private static func runStorage() -> Bool {
@@ -1085,6 +1697,39 @@ enum PipelineSelfTest {
         expect(glossary.entryCount == 3 && hinted.names.contains { $0.korean == "줄파락" }
                && hinted.names.contains { $0.english.hasPrefix("Tanaris") } && hinted.corrections.count == 1,
                "복사한 사전과 사용자 파일이 함께 읽힘 (이름 \(glossary.entryCount)개)")
+        // Without zone_places.<flavor>.tsv (an older bundle) there are no place hints, and
+        // nothing else changes; with it, a line of a zone's own channel that shares a word with
+        // one of the zone's places is remembered apart from the same line said elsewhere.
+        func zoneChat(_ label: String?, _ body: String, _ channel: ChatChannel = .publicChannel) -> ChatMessage {
+            ChatMessage(channel: channel, channelLabel: label, sender: "Rexxar", body: body, rawText: body, color: .white, firstSeen: Date())
+        }
+        let ruinLine = "LF2M for the ruins quest, need healer"
+        let noPlaces = glossary.placeZone(for: zoneChat("1. General - Tanaris", ruinLine)) == nil && glossary.placeZoneCount == 0
+        let zonePlacesFile = DictionaryFiles.names(for: .classic).zonePlaces
+        try? Data("zone_korean\tzone_english\tkorean\tenglish\n타나리스\tTanaris\t동부 달의 폐허\tEastmoon Ruins\n페랄라스\tFeralas\t이실디엔의 폐허\tRuins of Isildien\n페랄라스\tFeralas\t잊혀진 해안\tThe Forgotten Coast\n".utf8)
+            .write(to: bundled.appendingPathComponent(zonePlacesFile))
+        let withPlaces = BundledDictionary.install(to: paths, from: bundled)
+        let zoned = GlossaryStore(paths: paths, flavor: .classic)
+        var zoneMemo = TranslationMemo()
+        let inTanaris = zoneChat("1. General - Tanaris", ruinLine), inFeralas = zoneChat("1. 공개 - 페랄라스", ruinLine)
+        let elsewhere = zoneChat("2. 거래 - 도시", ruinLine), yelled = zoneChat(nil, ruinLine, .yell)
+        zoneMemo.store(.init(text: "동부 달의 폐허 퀘스트 2명 구함, 힐러 필요", note: nil, engine: "Haiku"), for: inTanaris, reader: .korean,
+                       zone: zoned.placeZone(for: inTanaris))
+        expect(noPlaces && withPlaces == [zonePlacesFile] && zoned.placeZoneCount == 2
+               && zoned.placeZone(for: inTanaris) == "Tanaris" && zoned.placeZone(for: inFeralas) == "Feralas"
+               && zoned.placeZone(for: elsewhere) == nil && zoned.placeZone(for: yelled) == nil
+               && zoneMemo.lookup(inTanaris, reader: .korean, zone: zoned.placeZone(for: inTanaris)) != nil
+               && zoneMemo.lookup(inFeralas, reader: .korean, zone: zoned.placeZone(for: inFeralas)) == nil
+               && zoneMemo.lookup(elsewhere, reader: .korean, zone: zoned.placeZone(for: elsewhere)) == nil,
+               "장소 사전이 없으면 장소 힌트 없이 그대로 동작하고, 있으면 같은 글이라도 지역 채널마다 따로 기억 (복사: \(withPlaces))")
+        // A careful retranslation made with the places of a zone is no example for later
+        // lines: a correction is found by its text alone, in whatever zone it is said next.
+        expect(TranslationPolicy.keepsCorrection(madeWithPlacesOf: zoned.placeZone(for: elsewhere))
+               && TranslationPolicy.keepsCorrection(madeWithPlacesOf: zoned.placeZone(for: yelled))
+               && !TranslationPolicy.keepsCorrection(madeWithPlacesOf: zoned.placeZone(for: inTanaris)),
+               "지역의 장소 힌트로 다시 번역한 줄은 교정 예시로 남기지 않음 (다른 지역에서 같은 글에 그 장소가 쓰이지 않게)")
+        try? fm.removeItem(at: bundled.appendingPathComponent(zonePlacesFile))
+        try? fm.removeItem(at: paths.dataDirectory.appendingPathComponent(zonePlacesFile))
         expect(BundledDictionary.install(to: paths, from: base.appendingPathComponent("nowhere")).isEmpty
                && BundledDictionary.install(to: paths, from: nil).isEmpty
                && ((try? fm.contentsOfDirectory(atPath: paths.dataDirectory.path)) ?? []).sorted() == present,
@@ -1098,6 +1743,83 @@ enum PipelineSelfTest {
         let tail = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
         expect(size > 0 && size <= 4100 && tail.hasSuffix("line 399 " + String(repeating: "x", count: 40) + "\n")
                && tail.hasPrefix("line "), "로그 파일은 크기 제한을 넘지 않고 최신 줄을 유지 (\(size)바이트)")
+        return ok
+    }
+
+    // MARK: - The ledger of live checks
+
+    /// `--translate-check --ledger`: the totals of a ledger file, the refusal before a run that
+    /// would pass a limit, the stop once a limit is reached, and the line a run appends.
+    private static func runLedger() -> Bool {
+        print("[실호출 장부]")
+        var ok = true
+        func expect(_ condition: Bool, _ what: String) {
+            print("  \(condition ? "통과" : "실패")  \(what)")
+            if !condition { ok = false }
+        }
+        typealias Totals = LiveLedger.Totals
+        typealias Limits = LiveLedger.Limits
+
+        let text = "# shared budget\nrun-a\tfirst\t3\t0.020000\n\n20260101T000000/run-b\tsecond agent\t2\t0.001500\n"
+        let sum = try? LiveLedger.totals(of: text)
+        expect(sum?.requests == 5 && abs((sum?.usd ?? 0) - 0.0215) < 1e-9, "장부 합계: 요청 5건 · $0.0215 (주석과 빈 줄은 건너뜀)")
+        var unreadable: [Int] = []
+        for bad in ["run\tagent\tthree\t0.1\n", "run\tagent\t1\n", "ok\ta\t1\t0.1\nrun agent 1 0.1\n", "run\tagent\t-1\t0.1\n", "run\tagent\t1\tnan\n"] {
+            do { _ = try LiveLedger.totals(of: bad) } catch LiveLedger.Failure.unreadableLine(let n) { unreadable.append(n) } catch {}
+        }
+        expect(unreadable == [1, 1, 2, 1, 1], "읽을 수 없는 줄이 있으면 합계를 내지 않음 (쓴 양을 모르면 실행하지 않음)")
+
+        let limits = Limits(maxRequests: 10, maxUSD: 0.05)
+        let spent = Totals(requests: 5, usd: 0.0215)
+        expect(LiveLedger.refusal(spent: spent, planned: Totals(requests: 5, usd: 0.0285), limits: limits) == nil,
+               "한도에 딱 맞는 실행은 허용")
+        expect(LiveLedger.refusal(spent: spent, planned: Totals(requests: 6, usd: 0.001), limits: limits) != nil
+               && LiveLedger.refusal(spent: spent, planned: Totals(requests: 1, usd: 0.0286), limits: limits) != nil,
+               "요청 수나 비용 한도를 넘길 실행은 시작하지 않음")
+        expect(LiveLedger.refusal(spent: spent, planned: Totals(requests: 100, usd: 9), limits: Limits()) == nil,
+               "한도를 주지 않으면 막지 않음")
+        expect(LiveLedger.reached(spent: Totals(requests: 9, usd: 0.04), limits: limits) == nil
+               && LiveLedger.reached(spent: Totals(requests: 10, usd: 0.04), limits: limits) != nil
+               && LiveLedger.reached(spent: Totals(requests: 9, usd: 0.05), limits: limits) != nil,
+               "실행 중에도 한도에 닿으면 다음 요청을 보내지 않음")
+
+        let price = ModelPrice(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5)
+        let one = LiveLedger.estimate(requests: 1, lines: 6, systemPromptBytes: 19_000, price: price)
+        let seven = LiveLedger.estimate(requests: 7, lines: 42, systemPromptBytes: 19_000, price: price)
+        expect(one > 0.02 && one < 0.04 && seven > one && seven < 0.09
+               && LiveLedger.estimate(requests: 0, lines: 0, systemPromptBytes: 19_000, price: price) == 0,
+               String(format: "예상 비용: 첫 요청은 캐시 쓰기, 나머지는 캐시 읽기 (1건 $%.4f, 7건 $%.4f)", one, seven))
+
+        let line = LiveLedger.line(run: "20260101T000000/check\tone", agent: " reviewer\n2 ", used: Totals(requests: 4, usd: 0.0123456))
+        expect(line == "20260101T000000/check one\treviewer 2\t4\t0.012346" && (try? LiveLedger.totals(of: line)) == Totals(requests: 4, usd: 0.012346),
+               "장부 줄: 이름 · 실행한 쪽 · 요청 수 · 달러, 탭으로 구분 (이름 속 탭·줄바꿈은 빈칸으로)")
+
+        // The file: created when missing, appended to, never joined to a line without a line break.
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent("runespeak-selftest-\(UUID().uuidString)", isDirectory: true)
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("ledger.tsv")
+        var waited = false
+        do {
+            let ledger = try LiveLedger(file: file) { waited = true }
+            let empty = try ledger.totals()
+            try ledger.append(run: "first", agent: "a", used: Totals(requests: 2, usd: 0.01))
+            ledger.close()
+            let handle = try FileHandle(forWritingTo: file)
+            _ = try handle.seekToEnd()
+            try handle.write(contentsOf: Data("second\tb\t1\t0.002000".utf8))   // no line break at the end
+            try handle.close()
+            let again = try LiveLedger(file: file) { waited = true }
+            try again.append(run: "third", agent: "c", used: Totals(requests: 3, usd: 0.03))
+            let total = try again.totals()
+            again.close()
+            let rows = ((try? String(contentsOf: file, encoding: .utf8)) ?? "").split(separator: "\n")
+            expect(empty == Totals() && rows.count == 3 && total.requests == 6 && abs(total.usd - 0.042) < 1e-9 && !waited,
+                   "장부 파일: 없으면 만들고, 한 실행에 한 줄씩 덧붙임 (합계 \(total.requests)건)")
+        } catch {
+            expect(false, "장부 파일: \(error)")
+        }
         return ok
     }
 

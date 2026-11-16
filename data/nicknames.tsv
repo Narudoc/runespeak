@@ -6,7 +6,7 @@
 # here: they are senses in data/abbreviations.*.tsv, where a note can tell the meanings apart.
 # A two-letter ALL-CAPS alias (UC, TB), or one spelled like an everyday word, matches capitals only;
 # longer ALL-CAPS aliases (STV, UBRS) match in any case.
-# Rows: 105
+# Rows: 106
 korean	english	aliases
 # == Cities and towns ==
 스톰윈드	Stormwind City	SW, Stormwind
@@ -24,6 +24,7 @@ korean	english	aliases
 레이크샤이어	Lakeshire	Lakeshire, Lake shire
 다크샤이어	Darkshire	Darkshire, Dark shire
 사우스쇼어	Southshore	Southshore, South shore
+메네실 항구	Menethil Harbor	Menethil(the harbour town; in a person's name - Arthas, Terenas, Calia Menethil - or an item's name it is the family 메네실, not the town)
 아스트라나르	Astranaar	Astranaar, Astranar
 # == Zones ==
 가시덤불 골짜기	Stranglethorn Vale	STV, Stranglethorn

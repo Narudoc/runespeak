@@ -94,7 +94,13 @@ public struct OCRFrame: Sendable {
     public var lines: [OCRLine]
     /// Pixel size of the captured image.
     public var imageSize: CGSize
-    public init(lines: [OCRLine], imageSize: CGSize) { self.lines = lines; self.imageSize = imageSize }
+    /// The chat window has an opaque background: its rows stand on plain black, and nothing of
+    /// the game world shows through. What the recogniser saw (`--replay-image` prints it);
+    /// the tracker reads such a frame like any other.
+    public var opaqueBackground: Bool
+    public init(lines: [OCRLine], imageSize: CGSize, opaqueBackground: Bool = false) {
+        self.lines = lines; self.imageSize = imageSize; self.opaqueBackground = opaqueBackground
+    }
 }
 
 /// One logical chat message (wrapped screen lines already merged).
@@ -111,10 +117,30 @@ public struct ChatMessage: Identifiable, Sendable, Hashable, Codable {
     public var rawText: String
     public var color: RGBColor
     public var firstSeen: Date
+    /// Wrapped rows of a message whose first row (channel tag and speaker) could not be read:
+    /// the end of something somebody said, without its beginning. Shown as it was read, never
+    /// sent for translation by itself, and replaced by the whole message once that is read
+    /// (`ChatTracker.corrections`).
+    public var isFragment: Bool
     public init(id: UUID = UUID(), channel: ChatChannel, channelLabel: String?, sender: String?,
-                body: String, rawText: String, color: RGBColor, firstSeen: Date) {
+                body: String, rawText: String, color: RGBColor, firstSeen: Date, isFragment: Bool = false) {
         self.id = id; self.channel = channel; self.channelLabel = channelLabel; self.sender = sender
         self.body = body; self.rawText = rawText; self.color = color; self.firstSeen = firstSeen
+        self.isFragment = isFragment
+    }
+
+    // Tolerant decoding: a message stored before `isFragment` existed is no fragment.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        channel = try c.decode(ChatChannel.self, forKey: .channel)
+        channelLabel = try c.decodeIfPresent(String.self, forKey: .channelLabel)
+        sender = try c.decodeIfPresent(String.self, forKey: .sender)
+        body = try c.decode(String.self, forKey: .body)
+        rawText = try c.decode(String.self, forKey: .rawText)
+        color = try c.decode(RGBColor.self, forKey: .color)
+        firstSeen = try c.decode(Date.self, forKey: .firstSeen)
+        isFragment = try c.decodeIfPresent(Bool.self, forKey: .isFragment) ?? false
     }
 }
 

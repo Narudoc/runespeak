@@ -105,6 +105,70 @@ enum GlossaryStopwords {
         자리 하나 둘 셋 모두 전부 조금 많이 정말 진짜 그냥 혹시 아마 역시 다시 계속 바로 같이
         """)
 
+    /// Whether a word of a place's name is too ordinary to point at the place by itself: an
+    /// everyday word, or one of the words fantasy place names are made of that chat uses all
+    /// day for something else ("The Park", "The Green Belt", "Raptor Ridge", "Thieves Camp").
+    static func isOrdinaryPlaceWord(_ key: String) -> Bool { contains(key) || placeNames.contains(key) }
+
+    /// Words found in the names of places (zone_places.<flavor>.tsv) that are no clue to a
+    /// place when a chat line says them: verbs and adjectives, things players carry, fight or
+    /// are (items, creatures, classes), abstract nouns. Nouns for a kind of place (harbor,
+    /// site, tavern, ruins) are deliberately not here: "the harbor" said in a zone's own
+    /// channel is that zone's harbor.
+    private static let placeNames: Set<String> = set("""
+        abandoned access advance ages ambush ancient ancients anger approach arcane arms assault authority \
+        bait balance band bargain battle beast beasts bears bell belly belt bite bitter blade blades blessed \
+        blind block bloody bloom bones boom bound bounty brave breath breathing breeze brew broken bronze \
+        bubble bucket buried burned burning buzz cage calm camp camps candle cell central chains challenge \
+        champion champions changed chaos chill choice chosen claim clan claw claws cloud club coal command \
+        company core corners corrupted courage cracked crash creepy crown crystal cursed cutter dagger damned \
+        dancing darkness daughter dawn deaths decay defense demon design destiny destroyed destroyer \
+        destruction devils dire distant dive doom double drag dragon dragons drain drake dread dreams drift \
+        drunk drunken dust dusty dying eastern echo elder elders elemental elements emerald emperor empire \
+        empty endless engine engineers escape eternal exchange exile exit eyes faded faithful fallen falling \
+        falls fang fangs fate favor fear feast feather feral fighting filled fishing fist flag flame flames \
+        flesh floating flow focus forbidden forever forgotten forsaken forward foul frost frozen fury ghost \
+        giant giants gift goblin golden grace grand grasp grave greasy grey grief grim guard guardian \
+        guidance hammer handling hanging harvest hearts heroes hidden holding honor hook hopes horn horror \
+        howl howling hungry hunter hunters hunting imagination immortal infinite inner invasion keeper \
+        keepers kindness kings knowledge labor lady launch lava lazy league legendary legs lift lightning \
+        lights lion logging lonely loyalty machine madness mage mages mana march master masters meat melody \
+        memories memory merchant military mining mirror misery missing mist mothers murder mysterious needle \
+        nightmare northern nowhere oath offensive office officer omen ones opening operations opportunity \
+        outer pale panic park parking parting path patience patrol pearl pile pillow pipe pitch plague \
+        planes pleasant pleasure plot pocket port portal post pride priest prime prince public punishment \
+        purchase purple queen rage raiders rainbow range raptor razor rear rebel records regret relief \
+        remains research resting retreat ritual roar rocket rocks roller rolling root roots rose royal ruby \
+        ruin ruined rune rusty sacred sailor salty samples sand savage scale scales scar scenario scrap \
+        screaming scroll seal sealed secret secrets serpent service setting shadow shadows shaman shallow \
+        shell shield shields shifting shining shipping shooting siege silence silent sink sisters skull slam \
+        slaughter slave sleeping slick slope smoking society soldiers sons sorrow soul souls southern spark \
+        speakers spear spike spine spirit spirits spite spoke spray squeeze stable stars stash steam steel \
+        steps stew sting stones storm storms stream strength strike strip study stump suffering suite \
+        summoning sunrise sunset supply support surge swarming swift swim sword tail tale tanks taps teeth \
+        terror thread throne thunder tide tiger times titan toll tooth torch torment totem toxic traders \
+        trading trail training transfer treasure trial trials triumph troll trust truths tunnel turtle \
+        twilight twin twisted unit unity used valor vengeance venom venture vice vicious victory vision \
+        visions void wagon wake walking ward warrior warriors waste watcher waters waves western whispers \
+        whistle wicked wilds winds wing wisdom witch wizard wolf words worlds worm wound wounds wrath wreck \
+        yard youth zone \
+        cape capital dwarven estate general helm highway pumpkin rotting satyr sundown survey thorn tranquil
+        """)
+
+    /// Whether a word of a chat line is too ordinary to be taken for a place's name cut short.
+    static func isOrdinaryPiece(_ key: String) -> Bool { pieces.contains(key) }
+
+    /// Ordinary words that happen to begin a longer word of some place's name ("plate" and a
+    /// Plateau, "split" and Splithoof, "stage" and a Stagecoach). Found by running an English
+    /// word list against both zone_places files; the everyday words above are left out before
+    /// this list is asked, and so are words that are a whole word of some place's name.
+    private static let pieces: Set<String> = set("""
+        actual alter anchor author awake broad craft crush element event extra forbid glitter golem growth \
+        hatch honey jewel origin plate prank protect reside resident rough shack shiver skunk solar speed \
+        splinter split spore stage stare stock stoned stout sunder swarm thick transform trick undergo \
+        wilder wither
+        """)
+
     /// Chat and game slang that is too common to be worth reporting as an official name.
     private static let slang: Set<String> = set("""
         lol lmao rofl omg wtf wth pls plz thx ty np gg gl hf brb afk sry srry yeah yep yup nah hmm haha hehe lf \

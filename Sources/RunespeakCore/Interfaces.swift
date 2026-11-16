@@ -16,7 +16,8 @@ public struct AppPaths: Sendable {
     }
 
     /// Dictionary files shipped with the app and refreshed from its bundle at launch
-    /// (official_names / abbreviations / chat_commands `.classic.tsv` and `.retail.tsv`, nicknames.tsv).
+    /// (official_names / abbreviations / chat_commands / zone_places `.classic.tsv` and `.retail.tsv`,
+    /// nicknames.tsv).
     public var dataDirectory: URL { root.appendingPathComponent("data", isDirectory: true) }
     public var settingsFile: URL { root.appendingPathComponent("settings.json") }
     public var chatAreaFile: URL { root.appendingPathComponent("chat_area.json") }
@@ -79,6 +80,43 @@ public struct GlossaryAbbreviation: Sendable, Hashable {
     }
 }
 
+/// A place of a zone that a line said in that zone's own channel may be speaking of.
+public struct GlossaryPlaceHint: Sendable, Hashable {
+    public var korean: String
+    public var english: String
+    /// The words of the line the place was found by, as the line wrote them: words of its
+    /// name ("lost rigger", "steamwh"), or one of them behind a code that shortens the rest
+    /// ("IB site").
+    public var written: String
+    public init(korean: String, english: String, written: String) {
+        self.korean = korean; self.english = english; self.written = written
+    }
+}
+
+/// Places of one zone that lines said in that zone's own channel may be speaking of, from
+/// zone_places.<flavor>.tsv. Weak evidence: the place only shares a word with the line.
+public struct GlossaryZonePlaces: Sendable, Hashable {
+    /// The zone the channel label names: "타나리스" / "Tanaris".
+    public var zone: GlossaryPair
+    public var places: [GlossaryPlaceHint]
+    public init(zone: GlossaryPair, places: [GlossaryPlaceHint]) { self.zone = zone; self.places = places }
+}
+
+/// One chat line as the glossary looks at it: its text and the channel it was said in.
+public struct GlossaryLine: Sendable, Hashable {
+    public var text: String
+    /// The label of the numbered channel the line was said in, as the game shows it
+    /// ("1. 공개 - 타나리스", "1. General - Tanaris"); nil for every other kind of chat.
+    public var channelLabel: String?
+    public init(text: String, channelLabel: String? = nil) { self.text = text; self.channelLabel = channelLabel }
+    /// `text` (the message's body, or what is left of it without its links) as a line of the
+    /// message's channel. Only a numbered channel carries its label along: the zone of a
+    /// say, yell, guild or party line is not known.
+    public init(text: String, of message: ChatMessage) {
+        self.init(text: text, channelLabel: message.channel == .publicChannel ? message.channelLabel : nil)
+    }
+}
+
 /// Dictionary material relevant to ONE piece of chat text, to be put in the translation prompt.
 public struct GlossaryHints: Sendable, Equatable {
     /// Official names found in the text (either language) with their counterpart. Either side
@@ -91,8 +129,15 @@ public struct GlossaryHints: Sendable, Equatable {
     public var looseNames: [GlossaryPair] = []
     /// Earlier corrected translations of the same or similar text.
     public var corrections: [CorrectionExample] = []
+    /// Places of the zone a line was said in whose name shares a word with the line, one entry
+    /// per zone. Only `hints(forLines:)` fills it: a bare text has no zone. Unlike the lists
+    /// above these are about single lines: asked for one line, they are what goes to the
+    /// model with that line (see `LLMTranslator.incomingPlaces`).
+    public var zonePlaces: [GlossaryZonePlaces] = []
     public init() {}
-    public var isEmpty: Bool { names.isEmpty && abbreviations.isEmpty && looseNames.isEmpty && corrections.isEmpty }
+    public var isEmpty: Bool {
+        names.isEmpty && abbreviations.isEmpty && looseNames.isEmpty && corrections.isEmpty && zonePlaces.isEmpty
+    }
 }
 
 public struct OutgoingCommand: Sendable, Equatable {
@@ -110,6 +155,11 @@ public protocol GlossaryProviding: AnyObject, Sendable {
     var abbreviationCount: Int { get }
     /// Dictionary material for a batch of texts. Must be fast (called for every chat line): < 5 ms per line.
     func hints(for texts: [String]) -> GlossaryHints
+    /// The same for chat lines whose channel is known: what `hints(for:)` gives for their texts
+    /// and, for a line of a zone's own channel, the places of that zone the line may be
+    /// speaking of (`GlossaryHints.zonePlaces`). Just as fast. A conformer without zone data
+    /// need not implement it: the default answers from the texts alone.
+    func hints(forLines lines: [GlossaryLine]) -> GlossaryHints
     /// Splits "/파티 잠시만요" into command "/p" + text "잠시만요" using chat_commands.<flavor>.tsv. Whisper-style commands
     /// keep their target: "/ㅈ Thrall 잠시만요" → command "/w Thrall", text "잠시만요".
     /// A slash command that is not chat ("/roll 100") comes back whole in `command` with empty
@@ -123,6 +173,17 @@ public protocol GlossaryProviding: AnyObject, Sendable {
 
 public extension GlossaryProviding {
     var abbreviationCount: Int { 0 }
+    func hints(forLines lines: [GlossaryLine]) -> GlossaryHints { hints(for: lines.map(\.text)) }
+
+    /// The zone (English name) whose places go along with this incoming line as hints; nil when
+    /// none do. With such hints the same words can be translated differently in another zone,
+    /// so a translation kept for the line belongs to that zone only (see `TranslationMemo`).
+    /// A typed emote is sent without its channel and takes no places
+    /// (`LLMTranslator.incomingPlaces`): none go along with it, whatever its words find.
+    func placeZone(for message: ChatMessage) -> String? {
+        guard TranslationPrompt.typedEmote(message.body) == nil else { return nil }
+        return hints(forLines: [GlossaryLine(incoming: message)]).zonePlaces.first?.zone.english
+    }
 }
 
 // MARK: - Chat tracking  (implemented in Chat/ as `final class ChatTracker: ChatTracking`)
@@ -236,11 +297,22 @@ public protocol Translating: AnyObject, Sendable {
     /// Translates chat lines in one request. Result is keyed by message id; a message missing from
     /// the result is treated as failed. Throws only when the whole request failed.
     func translateIncoming(_ messages: [ChatMessage], context: TranslationRequestContext) async throws -> [UUID: TranslationOutput]
+    /// The lines of `messages` grouped as this translator sends them: each group is one
+    /// request of `translateIncoming`, and lines of different groups never share one. Whoever
+    /// hands over a group at a time learns of each request how it ended (a rate limit, a
+    /// refusal, a time-out), where `translateIncoming` over all of them can only report the
+    /// lines one failed request left without an answer as missing.
+    func incomingRequests(for messages: [ChatMessage]) -> [[ChatMessage]]
     /// Careful single-line retranslation with a larger model; returns a note explaining the meaning.
     func retranslate(_ message: ChatMessage, previous: String?, context: TranslationRequestContext) async throws -> TranslationOutput
     /// Translates what the user typed into `language` (an English language name), keeping WoW jargon natural.
     /// Slash commands are NOT handled here — the caller splits them off with GlossaryProviding.parseOutgoing.
     func translateOutgoing(_ text: String, to language: String, context: TranslationRequestContext) async throws -> String
+}
+
+public extension Translating {
+    /// One request for whatever is handed over.
+    func incomingRequests(for messages: [ChatMessage]) -> [[ChatMessage]] { messages.isEmpty ? [] : [messages] }
 }
 
 public protocol UsageTracking: AnyObject, Sendable {

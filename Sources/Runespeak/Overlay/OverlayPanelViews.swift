@@ -543,7 +543,9 @@ final class OverlayRootView: NSView {
         let out = NSMutableAttributedString()
         switch entry.state {
         case .original:
-            return nil
+            // Only what a retranslation said about a line it left as it was.
+            guard let note = entry.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty else { return nil }
+            out.append(NSAttributedString(string: note, attributes: bodyAttributes))
         case .pending:
             out.append(NSAttributedString(string: "번역하는 중…", attributes: titleAttributes))
         case .failed(let reason):

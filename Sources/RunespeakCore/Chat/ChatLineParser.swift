@@ -34,6 +34,11 @@ public struct ParsedChatLine: Equatable, Sendable {
     /// thoruwcods]"): what OCR makes of a name with another drawn over it - or, rarely,
     /// somebody's name.
     var oddName: Bool = false
+    /// The header is whole but for the closing bracket of its numbered channel tag ("[1. General
+    /// [Some Name]: text"). OCR loses that bracket once in a long while; far more often
+    /// something is drawn over the tag (a menu of the game, whose label then reads as part of
+    /// the channel's name), so the row is damaged until the tag is known from a sound row.
+    var unclosedTag: Bool = false
 
     /// True for a header row that did not survive OCR in one piece (see `headerBroken`).
     public var isDamagedHeader: Bool { headerBroken }
@@ -109,6 +114,11 @@ public enum ChatLineParser {
             scanner.bareName = false
         }
         resolveChannelByColour(&result, color: color, tagKnown: scanner.tagKnown, bareName: scanner.bareName)
+        // "[1. 필터 설정습지] [Some Name]: text": a label of the game's chat menu where the name
+        // of the channel is. The menu is open over the row, and what reads as its header is not.
+        if result.hasPrefix, let label = result.channelLabel, ChatMenu.labelInside(label, locale: locale) != nil {
+            result.headerBroken = true
+        }
         if !result.hasPrefix, result.timestamp == nil {
             // "[Some Name]xxxx: text" in the colour of a player channel: a row that opens with
             // a bracketed word there is a header row or a wrapped link, never plain text.
@@ -194,6 +204,33 @@ public enum ChatLineParser {
         guard let head = name.unicodeScalars.first, head.properties.isUppercase,
               name.count >= 2, name.count <= 24, name.allSatisfy({ $0.isLetter || $0 == "-" || $0 == "'" }) else { return nil }
         return stripRealm(name)
+    }
+
+    /// A player's name is a capital followed by small letters, word by word. OCR takes "l" and
+    /// "I" (and the bar, the slash and the digit one) for each other: "TharI" and "Thar/" are
+    /// "Tharl", "lronvale" is "Ironvale". The first letter of a name is a capital; of letters
+    /// drawn alike small and large OCR tells the case by size alone and gets it wrong ("odo"
+    /// for "Odo"). Names in other scripts and names with digits of their own are left alone.
+    static func mendThinLetters(_ name: String) -> String {
+        var out: [Character] = []
+        var previous: Character?
+        var atWordStart = true
+        let chars = Array(name)
+        for (n, c) in chars.enumerated() {
+            var c = c
+            let next = n + 1 < chars.count ? chars[n + 1] : nil
+            if atWordStart {
+                if c == "l" || c == "|" || c == "1", let next, next.isASCII, next.isLowercase { c = "I" }
+                if n == 0, "cosuvwxz".contains(c), let next, next.isASCII, next.isLowercase { c = Character(c.uppercased()) }
+            } else if let previous, previous.isASCII, previous.isLowercase, c == "I" || c == "|" || c == "1" || c == "/",
+                      next == nil || next == " " || next?.isLowercase == true {
+                c = "l"
+            }
+            out.append(c)
+            atWordStart = c == " " || c == "-"
+            previous = c
+        }
+        return String(out)
     }
 
     static func stripRealm(_ name: String) -> String {
@@ -311,6 +348,8 @@ public enum ChatLineParser {
         var unclosedName: Bool = false
         /// See `ParsedChatLine.oddName`.
         var oddName: Bool = false
+        /// See `ParsedChatLine.unclosedTag`.
+        var unclosedTag: Bool = false
     }
 
     private struct Scanner {
@@ -496,10 +535,14 @@ public enum ChatLineParser {
             }
             guard !chars.isEmpty, chars.count <= 40 else { return nil }
             var letters = 0, spaces = 0
-            for c in chars {
+            for (n, c) in chars.enumerated() {
                 if c.isLetter { letters += 1 }
                 else if c == " " { spaces += 1 }
                 else if c.isNumber || c == "-" || c == "'" || c == "–" || c == "’" { continue }
+                // "Some Nam/": the thin last letter of a name read as a stroke (mended in
+                // `mendThinLetters`), between brackets.
+                else if c == "/", n > 0, chars[n - 1].isASCII, chars[n - 1].isLowercase, n == chars.count - 1 || chars[n + 1] == " ",
+                        left + right >= 2 { letters += 1 }
                 else { return nil }
             }
             guard letters >= 1 else { return nil }
@@ -555,7 +598,8 @@ public enum ChatLineParser {
             guard chars.count >= 2 else { return nil }
             var evidence = 0
             var realBrackets = 0
-            if let f = chars.first, Scanner.openers.contains(f) || f == "|" { evidence += 2; realBrackets += 1; chars.removeFirst() }
+            var opened = false
+            if let f = chars.first, Scanner.openers.contains(f) || f == "|" { evidence += 2; realBrackets += 1; opened = true; chars.removeFirst() }
             if let l = chars.last, Scanner.closers.contains(l) || l == "|" { evidence += 2; realBrackets += 1; chars.removeLast() }
             guard !chars.isEmpty else { return nil }
             // "[1. General] [First": a bracket inside without its partner means the field spans
@@ -584,7 +628,10 @@ public enum ChatLineParser {
                 }
             } else if realBrackets == 1, ChatLineParser.isNumberedChannel(content),
                       content.first.map({ $0.isNumber }) == true {
-                return (Header(channel: .publicChannel, label: content, name: nil, tagForKey: content, tagKnown: true), evidence)
+                // (A tag whose opening bracket is gone may have lost it to the edge of the
+                // captured region; one that opens and never closes has something over it.)
+                return (Header(channel: .publicChannel, label: content, name: nil, tagForKey: content, tagKnown: true,
+                               unclosedTag: opened), evidence)
             }
             // Try the content as is, then with misread bracket letters peeled off either end.
             var variants: [(String, Int)] = [(content, evidence)]
@@ -661,7 +708,7 @@ public enum ChatLineParser {
                 if nameEvidence == 0 && !(tag.evidence == 4 && Scanner.looksLikeName(name.text)) { continue }
                 var h = tag.header
                 h.name = name.text
-                h.broken = name.unclosed || name.odd
+                h.broken = name.unclosed || name.odd || h.unclosedTag
                 h.unclosedName = name.unclosed
                 h.oddName = name.odd && !name.unclosed
                 if h.tagKnown { return h }
@@ -767,15 +814,45 @@ public enum ChatLineParser {
             return name
         }
 
+        /// A creature's name with a quoted nickname in it (koKR: "별명" 이름 성, enUS: "Slim"
+        /// Some Name), in front of a speech particle. The quotes are no part of a name as
+        /// `cleanName` knows it; without them what is left must be one. OCR writes straight
+        /// quotes and now and then a space inside them. An apostrophe inside a word ("O'Neil")
+        /// is no quote.
+        func quotedName(_ field: ArraySlice<Character>) -> Name? {
+            let double: Set<Character> = ["\"", "“", "”", "„", "「", "」", "«", "»"]
+            let single: Set<Character> = ["'", "‘", "’", "`"]
+            let chars = Array(field)
+            var plain: [Character] = []
+            var marks: [Int] = []          // offsets into `plain` where a quote stood
+            for (n, c) in chars.enumerated() {
+                let atEdge = n == 0 || n == chars.count - 1 || chars[n - 1] == " " || chars[n + 1] == " "
+                if double.contains(c) || (single.contains(c) && atEdge) {
+                    marks.append(plain.count)
+                } else {
+                    plain.append(c)
+                }
+            }
+            guard marks.count == 2, marks[0] < marks[1], let bare = cleanName(plain[...], allowSpaces: true),
+                  bare.leftEvidence == 0, bare.rightEvidence == 0 else { return nil }
+            func words(_ part: ArraySlice<Character>) -> String {
+                String(part).split(separator: " ").joined(separator: " ")
+            }
+            let before = words(plain[..<marks[0]]), nick = words(plain[marks[0]..<marks[1]]), after = words(plain[marks[1]...])
+            guard !nick.isEmpty else { return nil }
+            let text = [before, "\"" + nick + "\"", after].filter { !$0.isEmpty }.joined(separator: " ")
+            return Name(text: text, leftEvidence: 0, rightEvidence: 0)
+        }
+
         func parseSpeech(_ head: ArraySlice<Character>) -> Header? {
             let lo = head.startIndex, hi = head.endIndex
             // English: last word is the verb.
             if let space = head.lastIndex(of: " "), space > lo {
                 let verb = TextFold.skeleton(String(head[(space + 1)..<hi]))
                 for v in ChatLineParser.englishVerbs where v.skeleton == verb {
-                    if let name = cleanName(head[lo..<space], allowSpaces: true) {
+                    if let name = cleanName(head[lo..<space], allowSpaces: true) ?? quotedName(head[lo..<space]) {
                         let evidence = name.leftEvidence + name.rightEvidence
-                        if evidence == 0 && !Scanner.looksLikeName(name.text) { continue }
+                        if evidence == 0 && !Scanner.looksLikeName(name.text.filter { $0 != "\"" }) { continue }
                         return Header(channel: speech(v.kind), label: nil, name: name.text, tagForKey: v.text,
                                       tagKnown: true, weak: evidence == 0,
                                       broken: Scanner.isUnclosed(name) || (evidence > 0 && Scanner.isOdd(name)),
@@ -801,7 +878,8 @@ public enum ChatLineParser {
                     k -= 1
                     if norm[k] != " " { remaining -= 1 }
                 }
-                guard var name = cleanName(head[lo..<k], allowSpaces: true) ?? nameBeforeCaughtGlyphs(head[lo..<k]) else { continue }
+                guard var name = cleanName(head[lo..<k], allowSpaces: true) ?? nameBeforeCaughtGlyphs(head[lo..<k])
+                        ?? quotedName(head[lo..<k]) else { continue }
                 // A misread particle is only believable right after a bracketed name.
                 if fuzzy && name.rightEvidence < 2 { continue }
                 // "ISome NameIHg의 외침": both brackets read as letters, and a glyph or two of
@@ -828,10 +906,11 @@ public enum ChatLineParser {
         mutating func run() -> ParsedChatLine {
             var start = skipSpaces(0)
             // A stray mark in front of the first bracket is OCR picking up the window edge.
+            // (A mark with nothing but blanks behind it has no bracket to stand in front of.)
             if start + 2 < count, !norm[start].isLetter, !norm[start].isNumber,
-               !Scanner.openers.contains(norm[start]), !Scanner.closers.contains(norm[start]),
-               Scanner.openers.contains(norm[skipSpaces(start + 1)]) {
-                start = skipSpaces(start + 1)
+               !Scanner.openers.contains(norm[start]), !Scanner.closers.contains(norm[start]) {
+                let next = skipSpaces(start + 1)
+                if next < count, Scanner.openers.contains(norm[next]) { start = next }
             }
             var timestamp: String?
             var i = start
@@ -868,7 +947,8 @@ public enum ChatLineParser {
             var tagEnd: Int?
             if let g1 = scanGroup(i) {
                 tagEnd = g1.end
-            } else if Scanner.openers.contains(norm[i]),
+            } else if Scanner.openers.contains(norm[i]), i + 2 < count,
+                      // (A row that is nothing but an opening bracket has no place for a second one.)
                       let open = (i + 2..<min(count, i + 22)).first(where: { Scanner.openers.contains(norm[$0]) }),
                       !norm[i..<open].contains(where: { Scanner.closers.contains($0) }) {
                 tagEnd = open           // closing bracket lost: "[Guild [Name] ..."
@@ -881,8 +961,8 @@ public enum ChatLineParser {
                 while j < count, Scanner.closers.contains(norm[j]) { j = skipSpaces(j + 1) }
                 if let g2 = scanGroup(j), let name = cleanName(norm[j..<g2.end], allowSpaces: true) {
                     h.name = name.text
-                    h.broken = Scanner.isOdd(name)
-                    h.oddName = h.broken
+                    h.oddName = Scanner.isOdd(name)
+                    h.broken = h.oddName || h.unclosedTag
                     var b = skipSpaces(g2.end)
                     if b < count, norm[b] == ":" || norm[b] == ";" || norm[b] == "." { b += 1 }
                     return finish(h, timestamp: timestamp, bodyStart: b)
@@ -895,7 +975,7 @@ public enum ChatLineParser {
                     h.name = name.text
                     // "[Name some words": the name group never closes, so where the name ends
                     // and what follows it is a guess.
-                    h.broken = name.rightEvidence == 0
+                    h.broken = name.rightEvidence == 0 || h.unclosedTag
                     return finish(h, timestamp: timestamp, bodyStart: k)
                 }
                 // Short addon tags are too ambiguous without a name ("[R] anyone?").
@@ -911,13 +991,15 @@ public enum ChatLineParser {
             bareName = h.bareName
             weak = h.weak
             var p = ParsedChatLine(timestamp: timestamp, channel: h.channel, channelLabel: h.label,
-                                   sender: h.name.map(ChatLineParser.stripRealm), body: body(from: bodyStart),
+                                   sender: h.name.map(ChatLineParser.stripRealm).map(ChatLineParser.mendThinLetters),
+                                   body: body(from: bodyStart),
                                    hasPrefix: true)
             p.headerTag = h.tagForKey
             p.headerName = h.name ?? ""
             p.headerBroken = h.broken
             p.unclosedName = h.broken && h.unclosedName
             p.oddName = h.broken && h.oddName
+            p.unclosedTag = h.broken && h.unclosedTag && !h.unclosedName && !h.oddName
             return p
         }
     }

@@ -21,6 +21,8 @@ enum OverlayChatFormat {
 
     /// The line as the game showed it.
     static func originalLine(for message: ChatMessage) -> String {
+        // Rows without their header row: marked as the end of something ("… the rest").
+        if message.isFragment { return prefix(for: message) + ChatDisplay.body(for: message) }
         let raw = message.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         return raw.isEmpty ? prefix(for: message) + message.body : raw
     }

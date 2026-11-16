@@ -45,7 +45,7 @@ struct ClaudeBackend: ProviderBackend {
         return set
     }
 
-    static func requestBody(modelID: String, system: String = TranslationPrompt.system, user: String,
+    static func requestBody(modelID: String, system: String = TranslationPrompt.system, addendum: String? = nil, user: String,
                             careful: Bool, features: Set<RequestFeature>) -> JSONValue {
         var thinking: JSONValue?
         if features.contains(.thinkingOff) {
@@ -62,13 +62,15 @@ struct ClaudeBackend: ProviderBackend {
         return .obj([
             "model": .string(modelID),
             "max_tokens": .int(ProviderBackends.maxOutputTokens),
+            // The cache breakpoint stands behind the frozen prompt; what only some requests
+            // carry comes after it and is read fresh.
             "system": .array([
                 .obj([
                     "type": .string("text"),
                     "text": .string(system),
                     "cache_control": .obj(["type": .string("ephemeral")]),
                 ]),
-            ]),
+            ] + (addendum.map { [.obj(["type": .string("text"), "text": .string($0)])] } ?? [])),
             "messages": .array([
                 .obj(["role": .string("user"), "content": .string(user)]),
             ]),
@@ -78,11 +80,12 @@ struct ClaudeBackend: ProviderBackend {
         ])
     }
 
-    func request(apiKey: String, modelID: String, system: String, user: String, careful: Bool, features: Set<RequestFeature>) -> URLRequest {
+    func request(apiKey: String, modelID: String, system: String, addendum: String?, user: String, careful: Bool,
+                 features: Set<RequestFeature>) -> URLRequest {
         var request = ProviderBackends.jsonRequest(
             Self.endpoint,
             headers: ["x-api-key": apiKey, "anthropic-version": Self.apiVersion],
-            body: Self.requestBody(modelID: modelID, system: system, user: user, careful: careful, features: features))
+            body: Self.requestBody(modelID: modelID, system: system, addendum: addendum, user: user, careful: careful, features: features))
         if features.contains(.fallbacks) {
             request.setValue(Self.fallbackBeta, forHTTPHeaderField: "anthropic-beta")
         }

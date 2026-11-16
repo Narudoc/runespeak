@@ -16,6 +16,7 @@ DICTIONARY_FILES=(
     official_names.classic.tsv official_names.retail.tsv
     abbreviations.classic.tsv abbreviations.retail.tsv
     chat_commands.classic.tsv chat_commands.retail.tsv
+    zone_places.classic.tsv zone_places.retail.tsv
     nicknames.tsv
 )
 if [ ! -d "$ROOT/data" ]; then
@@ -39,6 +40,12 @@ BIN_DIR="$(swift build -c release --show-bin-path)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
+# The linker leaves the debug map of the build in the binary: the path of every source and
+# object file, each beginning with the home folder of whoever built it. The app has no use for
+# them and is handed to other people (scripts/build-dmg.sh), so they are taken out of the copy.
+if ! strip -S "$APP/Contents/MacOS/$EXECUTABLE" 2>/dev/null; then
+    echo "실행 파일에서 빌드 경로를 지우지 못했습니다 (strip). 그대로 둡니다."
+fi
 
 # SwiftPM resource bundles, if the package ever gains any.
 shopt -s nullglob

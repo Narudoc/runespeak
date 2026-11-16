@@ -5,9 +5,11 @@ import Foundation
 public enum DictionaryFiles {
     public static let nicknames = "nicknames.tsv"
 
-    public static func names(for flavor: GameFlavor) -> (officialNames: String, abbreviations: String, chatCommands: String) {
+    public static func names(for flavor: GameFlavor)
+        -> (officialNames: String, abbreviations: String, chatCommands: String, zonePlaces: String) {
         let suffix = flavor == .retail ? "retail" : "classic"
-        return ("official_names.\(suffix).tsv", "abbreviations.\(suffix).tsv", "chat_commands.\(suffix).tsv")
+        return ("official_names.\(suffix).tsv", "abbreviations.\(suffix).tsv", "chat_commands.\(suffix).tsv",
+                "zone_places.\(suffix).tsv")
     }
 
     /// Every file a complete data folder holds.
@@ -15,7 +17,7 @@ public enum DictionaryFiles {
         var out: [String] = []
         for flavor in [GameFlavor.classic, .retail] {
             let files = names(for: flavor)
-            out += [files.officialNames, files.abbreviations, files.chatCommands]
+            out += [files.officialNames, files.abbreviations, files.chatCommands, files.zonePlaces]
         }
         return out + [nicknames]
     }

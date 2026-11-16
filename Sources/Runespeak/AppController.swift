@@ -52,6 +52,10 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
     private var instanceLock: Int32 = -1
     private var lastQueueError: (TranslationError, Date)?
     private var memo = TranslationMemo()
+    /// Lines whose request came back with the line itself (see `TranslationEcho`). They are
+    /// shown in the original like lines that were never sent, but they have had their answer:
+    /// switching their tab on must not send them again.
+    private var answeredUnchanged: Set<UUID> = []
     private var gameViewObservers: [(NotificationCenter, NSObjectProtocol)] = []
     private var gameViewHide: DispatchWorkItem?
 
@@ -405,11 +409,14 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
                 continue
             }
             var entry = ChatEntry(message: message, state: .original)
-            if settings.saveChatLog { chatHistory.append(message: message) }
+            let replaced = corrections[message.id] ?? []
+            if settings.saveChatLog { chatHistory.append(message: message, replacing: !replaced.isEmpty) }
+            // The lines this one stands in for wait for nothing any more.
+            queue.cancel(replaced)
             if TranslationPolicy.shouldTranslate(message, settings: settings), beginTranslation(of: &entry) {
                 toTranslate.append(message)
             }
-            entries.place(entry, replacing: corrections[message.id] ?? [])
+            entries.place(entry, replacing: replaced)
         }
         if entries.count > Self.historyLimit { entries.removeFirst(entries.count - Self.historyLimit) }
         state.entries = entries
@@ -426,11 +433,20 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
             entry.engine = "보낸 말"
             return false
         }
-        if let hit = memo.lookup(message, reader: state.settings.readerLanguage) {
+        if let hit = memo.lookup(message, reader: state.settings.readerLanguage, zone: placeZone(of: message)) {
+            if hit.unchanged {
+                // The same line came back unchanged before: it is not paid for a second time.
+                entry.state = .original
+                entry.note = nil
+                entry.engine = nil
+                markUnchanged(entry.id)
+                if state.settings.saveChatLog { chatHistory.append(unchangedAnswerFor: message, engine: hit.engine, reused: true) }
+                return false
+            }
             entry.state = .translated(hit.text)
             entry.note = hit.note
             entry.engine = hit.engine
-            if state.settings.saveChatLog { chatHistory.append(translation: hit.text, of: message) }
+            if state.settings.saveChatLog { chatHistory.append(translation: hit.text, of: message, engine: hit.engine, reused: true) }
             return false
         }
         entry.state = .pending
@@ -444,7 +460,7 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
     private func translateExisting(in groups: Set<ChannelGroup>) {
         var entries = state.entries
         let chosen = TranslationPolicy.catchUp(entries, groups: groups, reader: state.settings.readerLanguage,
-                                               limit: Self.catchUpLines)
+                                               limit: Self.catchUpLines, except: answeredUnchanged)
         guard !chosen.isEmpty else { return }
         var toTranslate: [ChatMessage] = []
         for index in chosen where beginTranslation(of: &entries[index]) {
@@ -470,6 +486,12 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
         again.reversed().forEach(queue.retry)
     }
 
+    /// The zone whose places go to the model with this line (see `TranslationMemo.key`): a
+    /// translation made with them is remembered for that zone's channel only.
+    private func placeZone(of message: ChatMessage) -> String? {
+        glossary?.placeZone(for: message)
+    }
+
     private func ownOriginal(for message: ChatMessage) -> String? {
         let key = TranslationPolicy.looseKey(message.body)
         guard key.count >= 4 else { return nil }
@@ -478,13 +500,8 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
 
     private func requestContext(model: String, excluding batch: [ChatMessage]) -> TranslationRequestContext {
         let skip = Set(batch.map(\.id))
-        // A line that failed tells the model nothing, and one a provider refused would get
-        // the next requests refused with it.
         let recent = state.entries.lazy
-            .filter { entry in
-                if case .failed = entry.state { return false }
-                return entry.message.channel.group != nil && !skip.contains(entry.id)
-            }
+            .filter { TranslationPolicy.belongsInContext($0) && !skip.contains($0.id) }
             .suffix(Self.recentContextLines)
             .map(\.message)
         return TranslationRequestContext(reader: state.settings.readerLanguage, flavor: state.activeFlavor,
@@ -501,16 +518,34 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
             guard entries[index].state == .pending, !retranslating.contains(outcome.id) else { continue }
             entries[index].state = outcome.state
             entries[index].note = outcome.note
-            entries[index].engine = outcome.engine
+            // An answer that says the line over again is no translation: the line is shown as
+            // the game showed it, nothing is remembered for it, and the log says only that
+            // the model was asked.
+            entries[index].engine = outcome.unchanged ? nil : outcome.engine
             changed = true
-            if case .translated(let text) = outcome.state {
+            if outcome.unchanged {
+                markUnchanged(outcome.id)
+                memo.store(.unchanged(engine: outcome.engine), for: entries[index].message, reader: state.settings.readerLanguage,
+                           zone: placeZone(of: entries[index].message))
+                if state.settings.saveChatLog { chatHistory.append(unchangedAnswerFor: entries[index].message, engine: outcome.engine) }
+            } else if case .translated(let text) = outcome.state {
                 memo.store(.init(text: text, note: outcome.note, engine: outcome.engine),
-                           for: entries[index].message, reader: state.settings.readerLanguage)
-                if state.settings.saveChatLog { chatHistory.append(translation: text, of: entries[index].message) }
+                           for: entries[index].message, reader: state.settings.readerLanguage,
+                           zone: placeZone(of: entries[index].message))
+                if state.settings.saveChatLog { chatHistory.append(translation: text, of: entries[index].message, engine: outcome.engine) }
             }
         }
         if changed { state.entries = entries }
         refreshUsage()
+    }
+
+    private func markUnchanged(_ id: UUID) {
+        answeredUnchanged.insert(id)
+        // Only lines still in the list can be asked about.
+        if answeredUnchanged.count > 2 * Self.historyLimit {
+            answeredUnchanged.formIntersection(state.entries.map(\.id))
+            answeredUnchanged.insert(id)
+        }
     }
 
     private func reportQueueError(_ error: TranslationError) {
@@ -536,8 +571,10 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
         guard queue != nil else { return }
         queue.clearErrors()
         lastQueueError = nil
-        // Another model may well translate the same line better.
+        // Another model may well translate the same line better, and may have something to
+        // say about a line the last one handed back.
         memo.removeAll()
+        answeredUnchanged.removeAll()
         retryFailed()
     }
 
@@ -708,7 +745,11 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
             notify("아직 번역하는 중인 줄입니다")
             return
         }
-        guard entry.message.channel.group != nil, retranslating.insert(entryID).inserted else { return }
+        guard !entry.message.isFragment else {
+            notify("앞부분이 가려진 줄입니다. 전체 문장이 읽히면 번역됩니다")
+            return
+        }
+        guard TranslationPolicy.canRetranslate(entry), retranslating.insert(entryID).inserted else { return }
         let before = entry
         var previous: String?
         if case .translated(let text) = entry.state { previous = text }
@@ -728,17 +769,36 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
             guard let self else { return }
             self.retranslating.remove(entryID)
             switch result {
+            case .success(let output) where TranslationEcho.isEcho(output.text, of: entry.message, reader: context.reader):
+                // The careful model says the line over again: there is nothing to translate
+                // in it. The line goes back to the original and no translation is kept for it,
+                // here or in the corrections; what the model said ABOUT the line (why there is
+                // nothing to translate) stays on it.
+                let note = TranslationPolicy.noteForUnchangedRetranslation(output.note)
+                self.update(entryID) {
+                    $0.state = .original
+                    $0.note = note
+                    $0.engine = nil
+                }
+                self.markUnchanged(entryID)
+                self.memo.store(.unchanged(engine: engine), for: entry.message, reader: context.reader,
+                                zone: self.placeZone(of: entry.message))
+                if self.state.settings.saveChatLog { self.chatHistory.append(unchangedAnswerFor: entry.message, engine: engine) }
+                self.notify(note.map { "다시 번역: 번역할 말이 없는 줄입니다 — \($0)" } ?? "다시 번역: 원문과 같은 답이 와서 원문 그대로 둡니다")
             case .success(let output) where !output.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
                 self.update(entryID) {
                     $0.state = .translated(output.text)
                     $0.note = output.note
                     $0.engine = engine
                 }
+                let zone = self.placeZone(of: entry.message)
                 self.memo.store(.init(text: output.text, note: output.note, engine: engine),
-                                for: entry.message, reader: self.state.settings.readerLanguage)
-                if self.state.settings.saveChatLog { self.chatHistory.append(translation: output.text, of: entry.message) }
-                let example = CorrectionExample(source: entry.message.body, translation: output.text, note: output.note)
-                self.glossaryQueue.async { glossary.addCorrection(example) }
+                                for: entry.message, reader: self.state.settings.readerLanguage, zone: zone)
+                if self.state.settings.saveChatLog { self.chatHistory.append(translation: output.text, of: entry.message, engine: engine) }
+                if TranslationPolicy.keepsCorrection(madeWithPlacesOf: zone) {
+                    let example = CorrectionExample(source: entry.message.body, translation: output.text, note: output.note)
+                    self.glossaryQueue.async { glossary.addCorrection(example) }
+                }
             case .success:
                 self.update(entryID) { $0 = before }
                 self.notify("다시 번역하지 못했습니다: 빈 응답")
@@ -862,6 +922,7 @@ final class AppController: NSObject, AppActions, NSApplicationDelegate, NSMenuDe
     func clearHistory() {
         queue.cancelAll()
         retranslating.removeAll()
+        answeredUnchanged.removeAll()
         state.entries = []
     }
 

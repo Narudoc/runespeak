@@ -215,4 +215,40 @@ enum LineSimilarity {
         }
         return close(a.tag, b.tag) && close(a.name, b.name) && close(a.body, b.body)
     }
+
+    /// Whether `now` is a message that already went out as `earlier`, read again with
+    /// something drawn over part of it: the same speaker give or take a glyph or two (or only
+    /// the last word of the name), saying the same thing, nearly all of it, or the first part
+    /// of it (the header row without its wrapped rows). The channel tag is not looked at: it is
+    /// the part an overlay damages first. Only for lines that did not arrive as new chat below
+    /// the newest line: somebody saying the first half of an earlier message again is rare, a
+    /// row of old chat read differently is not.
+    static func isReRead(_ now: LineKey, of earlier: LineKey) -> Bool {
+        if isSameMessage(now, earlier) { return true }
+        guard now.hasHeader, earlier.hasHeader, !now.name.isEmpty, !earlier.name.isEmpty else { return false }
+        let a = now.name, b = earlier.name
+        let n = max(a.count, b.count)
+        let sameSpeaker = a == b || TextFold.distance(a, b, limit: n < 6 ? 1 : 2) != nil
+            || (min(a.count, b.count) >= 3 && (b.suffix(a.count).elementsEqual(a) || a.suffix(b.count).elementsEqual(b)))
+        guard sameSpeaker else { return false }
+        let x = now.body, y = earlier.body
+        guard min(x.count, y.count) >= 8 else { return x == y }
+        if y.starts(with: x) { return true }
+        // What is drawn over a row changes its letters. Other numbers are another message
+        // ("LF3M ..." after "LF2M ...", the same question with another time in it).
+        guard x.filter(TextFold.isDigit) == y.filter(TextFold.isDigit) else { return false }
+        return TextFold.distance(x, y, limit: max(x.count, y.count) / 5) != nil
+    }
+
+    /// Whether `rows` (wrapped rows that went out, or are about to, without their header row)
+    /// are part of the message `whole`: its text contains theirs.
+    static func isPart(_ rows: LineKey, of whole: LineKey) -> Bool {
+        let part = rows.body, body = whole.body
+        guard rows.name.isEmpty, part.count >= 6, body.count > part.count else { return false }
+        let last = body.count - part.count
+        for start in 0...last where body[start] == part[0] && body[start..<(start + part.count)].elementsEqual(part) {
+            return true
+        }
+        return false
+    }
 }

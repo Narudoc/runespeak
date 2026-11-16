@@ -4,7 +4,7 @@
 # korean = official Korean name when english is an official name in official_names.classic.tsv,
 # otherwise the usual Korean player term (may be empty); note = when the sense applies.
 # An ambiguous abbr has one row per sense.
-# Rows: 1002
+# Rows: 1003
 abbr	also	english	korean	note
 # == Finding a group, recruiting ==
 LFG		looking for group	파티 구함	the writer wants to join a group; usually followed by a role and a dungeon or raid; a role or class right before or after it is the writer's own ('tank LFG', 'LFG tank' = a tank looking for a group), not a role wanted; only a role after 'need' later in the line is one that is missing ('LFG UBRS need healer' = '검은바위 첨탑 상층 파티 구함, 힐러 필요')
@@ -18,7 +18,7 @@ PST		please send tell	귓속말 주세요	ends an advert; means whisper me, not 
 PM		private message	귓속말	"pm me" means whisper me; after a clock time it is simply afternoon
 inv	invite	invite	초대	"inv pls" asks for a group invitation; "inv" after a name means invite that player
 1		count me in	저요(손)	a lone "1" answers a call such as "type 1 for invite" or "1 if ready"
-summ	summon, summs, summons, sums	summon	소환	asking for or offering a warlock summon to the dungeon entrance
+summ	summon, summs, summons, sums	summon	소환	as a request or an offer ('summ pls', 'can summon', 'summons up') a warlock summon to the dungeon entrance; 'summon X' as the name of a skill is 'X 소환', noun first
 port	portal, ports	mage portal	차원문	a mage teleporting buyers to a city, usually for a small fee or tip
 pug	PuG, pugs, pugging	pick-up group	막공(즉석 파티)	a group or raid of strangers rather than a guild team; also used for a stranger in the group
 premade	pre-made	premade group	사전 구성 팀	an organised battleground team that queues together, as opposed to random players
@@ -669,6 +669,7 @@ omg	omfg	oh my god	헐	surprise
 wtf	wth	what the hell	뭐야	surprise or anger
 smh		shaking my head	절레절레	disappointment
 gtg	g2g, gotta go	got to go	가봐야 해요	leaving
+gtg	g2g	good to go	바로 출발	at the end of a recruiting line ('LF1M healer then g2g', 'need 1 dps and gtg'): the group is ready and leaves as soon as the open spot is filled
 cya	cu, see ya, cyas	see you	또 봐요	goodbye
 ttyl		talk to you later	나중에 얘기해요	goodbye
 gn	gnight, nn, nite	good night	좋은 밤 되세요	goodbye at night

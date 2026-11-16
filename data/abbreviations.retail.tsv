@@ -1,7 +1,7 @@
 # Chat abbreviations and slang of the retail game.
 # Hand-written; the korean column holds the official Korean name (as in official_names.retail.tsv)
 # when english is an official name, otherwise the term Korean players use. Edit by hand.
-# Rows: 669
+# Rows: 670
 abbr	also	english	korean	note
 # Group finding and trade
 LFG		looking for group	파티 구함	a player wants to join a group; usually followed by their role, class or the content; a role or class right before or after it is the writer's own ('tank LFG', 'LFG tank' = a tank looking for a group), not a role wanted; only a role after 'need' later in the line is one that is missing ('LFG UBRS need healer' = '검은바위 첨탑 상층 파티 구함, 힐러 필요')
@@ -22,7 +22,7 @@ DM		direct message	귓속말	social-media habit carried into chat: "dm me the pr
 DM		Deadmines	죽음의 폐광	choose this sense when the token stands among dungeon names or after LFG/LFM: the pirate hideout under Moonbrook
 DM		Dire Maul	혈투의 전장	the Feralas dungeon, mostly in timewalking or old-content talk; far rarer in retail than the other senses
 inv	invite	invite	초대	"inv pls" asks to be added to the group; "inv" alone can be a request or an offer
-summ	sum,summon	summon	소환	asking a warlock or the meeting stone to teleport the player to the group
+summ	sum,summon	summon	소환	as a request or an offer ('summ pls', 'can summon') a warlock or the meeting stone teleporting the player to the group; 'summon X' as the name of a skill is 'X 소환', noun first
 port		mage portal	차원문	asking a mage for a city portal, often with a tip
 port	ports,tp	dungeon teleport	던전 순간이동	the teleport earned by timing a high key; "have port" means the player can teleport to the entrance
 GDKP		gold-bid loot run	골드팟	a run where drops are auctioned for gold and the pot is split among the group
@@ -516,6 +516,7 @@ ez		easy	쉽네	bragging that something was easy
 brb		be right back	금방 올게요	
 bio		bathroom break	화장실 다녀올게요	a short break request
 gtg	g2g	got to go	가봐야 해요	"got to go"
+gtg	g2g	good to go	바로 출발	at the end of a recruiting line ('LF1M healer then g2g', 'need 1 dps and gtg'): the group is ready and leaves as soon as the open spot is filled
 cya	bb,ttyl	see you	잘 가요	goodbye
 idk		I don't know	몰라요	
 idc		I don't care	상관없어요	

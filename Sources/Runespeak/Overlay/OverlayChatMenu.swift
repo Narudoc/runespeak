@@ -39,8 +39,9 @@ enum OverlayChatMenu {
             })
         }
         let retranslateTitle = state.hasAPIKey ? "다시 번역" : "다시 번역 (AI API 키 필요)"
-        // Not while the line is still waiting for its first answer.
-        menu.addItem(OverlayClosureMenuItem(retranslateTitle, enabled: state.hasAPIKey && !isSystem && entry.state != .pending) { [weak state] in
+        // Not while the line is still waiting for its first answer, and not for rows that
+        // were read without the beginning of their message.
+        menu.addItem(OverlayClosureMenuItem(retranslateTitle, enabled: state.hasAPIKey && TranslationPolicy.canRetranslate(entry)) { [weak state] in
             state?.actions?.retranslate(entryID: id)
         })
         menu.addItem(.separator())

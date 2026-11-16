@@ -74,6 +74,10 @@ final class GlossaryIndex: Sendable {
         var names: [GlossaryPair] = []
         var abbreviations: [GlossaryAbbreviation] = []
         var skills: [GlossaryPair] = []
+        /// Per unit of the text (`GlossaryUnits`): a name or an abbreviation found here takes
+        /// this unit as part of it. A loose name does not count: "ruins" read as several of the
+        /// spell Ruin says nothing about what the word is. Empty when nothing was found.
+        var explained: [Bool] = []
     }
 
     // MARK: Building
@@ -328,7 +332,11 @@ final class GlossaryIndex: Sendable {
 
     func match(_ text: String, limits: Limits = Limits()) -> Result {
         if map.isEmpty { return Result() }
-        let units = GlossaryUnits(text)
+        return match(GlossaryUnits(text), limits: limits)
+    }
+
+    func match(_ units: GlossaryUnits, limits: Limits = Limits()) -> Result {
+        if map.isEmpty { return Result() }
         let n = units.count
         if n == 0 { return Result() }
         let shouted = !units.hasLowercase(0..<n)
@@ -375,6 +383,7 @@ final class GlossaryIndex: Sendable {
         // "strat live"), because the abbreviation line alone does not give the official Korean name.
         var covered = [Bool](repeating: false, count: n)
         var coveredByName = [Bool](repeating: false, count: n)
+        var explained = [Bool](repeating: false, count: n)
         var accepted: [Candidate] = []
         for var c in candidates {
             let hasName = c.refs.contains { $0.kind == .name }
@@ -389,14 +398,18 @@ final class GlossaryIndex: Sendable {
                 c.refs = keep.map { c.refs[$0] }
                 c.exactCase = keep.map { c.exactCase[$0] }
             }
+            let explains = hasName || c.refs.contains { $0.kind == .abbreviation }
             for i in c.start..<c.end {
                 covered[i] = true
                 if hasName { coveredByName[i] = true }
+                if explains { explained[i] = true }
             }
             accepted.append(c)
         }
 
-        return assemble(accepted, limits: limits)
+        var result = assemble(accepted, limits: limits)
+        result.explained = explained
+        return result
     }
 
     /// Checks one span of the text against the dictionary and records it when some entry applies.

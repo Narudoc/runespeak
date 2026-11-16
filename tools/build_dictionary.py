@@ -3,7 +3,7 @@
 
 Run from the repository root:
 
-    python3 -I tools/build_dictionary.py            # build all four files
+    python3 -I tools/build_dictionary.py            # build all six files
     python3 -I tools/build_dictionary.py --offline  # cache only, no network
     python3 -I tools/build_dictionary.py --inspect Map   # show a table's columns
 
@@ -289,6 +289,7 @@ class Product:
         self.product = product
         self.build = build
         self.rows = []          # (kind, korean, english)
+        self.places = []        # (zone korean, zone english, place korean, place english)
         self.dropped = 0
         self.dropped_rows = []
         self.dropped_labels = 0
@@ -367,6 +368,67 @@ class Product:
         self.currencies()
         self.achievements()
         self.drop_placeholders()
+        self.zone_places()
+
+    def zone_places(self):
+        """Every named sub-area with the zones it lies in, for zone_places.<flavor>.tsv.
+
+        A zone is an area a zone channel ("General - Tanaris") is named after.  That is the
+        top of the ParentAreaID chain, and also every area between (a sub-area may hang under
+        another one): the later clients keep the old zones as children of a region, with
+        "Booty Bay" under "The Cape of Stranglethorn" under "Stranglethorn Vale", and the
+        channel there is named after the cape.  So a place is listed under each area above it.
+        Both names pass the same hygiene as the official names; nothing here touches `rows`.
+        """
+        en, ko = self.both("AreaTable")
+        if en is None:
+            return
+        by_id = {r["ID"]: r for r in en}
+
+        # One name can stand on several areas: the zone itself, and copies of it on the maps
+        # of dungeons, raids, battlegrounds and scenarios (the "Duskwood" of a raid map whose
+        # children are copies of places of Elwynn Forest).  A channel is named after the zone,
+        # so of the areas of one name that have places under them only one counts as a zone
+        # here: a top area before a sub-area, one on an open-world map (Map.InstanceType 0)
+        # before any other, and then the one with the lowest ID, which is the oldest.
+        world = {r["ID"] for r in (self.table("Map") or []) if r["InstanceType"] == "0"}
+        parents = {r["ParentAreaID"] for r in en}
+        the_zone = {}
+        for r in en:
+            name = clean(r.get("AreaName_lang", "")).casefold()
+            rank = (r["ParentAreaID"] != "0", r["ContinentID"] not in world, int(r["ID"]))
+            if name and r["ID"] in parents and (name not in the_zone or rank < the_zone[name][0]):
+                the_zone[name] = (rank, r["ID"])
+
+        def pair(r):
+            k = ko.get(r["ID"])
+            if k is None:
+                return None
+            names = clean(k.get("AreaName_lang", "")), clean(r.get("AreaName_lang", ""))
+            return names if good_pair(*names) else None
+
+        for r in en:
+            place = pair(r)
+            if place is None or r["ParentAreaID"] == "0":
+                continue
+            above, seen, area = [], {r["ID"]}, r
+            while area["ParentAreaID"] != "0":
+                area = by_id.get(area["ParentAreaID"])
+                if area is None or area["ID"] in seen:     # a broken or looping chain: no zone
+                    above = []
+                    break
+                seen.add(area["ID"])
+                above.append(area)
+            for area in reversed(above):                   # the top zone first
+                zone = pair(area)
+                if zone is None or ("zone", zone[1]) in LABEL_NAMES:
+                    continue
+                if the_zone[zone[1].casefold()][1] != area["ID"]:     # a namesake on another map
+                    continue
+                # "Stormwind City" inside Stormwind City: the zone itself, not a place in it.
+                if place[1].casefold() == zone[1].casefold():
+                    continue
+                self.places.append(zone + place)
 
     def drop_placeholders(self):
         shared = {}
@@ -509,6 +571,40 @@ def merge(products, renamed=None):
     return [(k, ko, en) for k, ko, en, _ in rows]
 
 
+def merge_places(products):
+    """Zone -> places of several products, the first product winning ties.
+
+    Follows `merge`: a zone or a place of a zone is named in Korean by the first listed
+    client that has it.  The places of a zone are the union over the clients (a place a later
+    expansion added to an old zone is a place of that zone).  A zone the clients name
+    differently in Korean (Darkshore, Moonglade: renamed in later expansions) keeps the other
+    names apart, because a channel label shows the name of whichever client is running.
+    A place listed twice for a zone (two areas of one name) is kept once.
+
+    Returns (rows, zones, places, other names); a row is (zone korean, zone english, place
+    korean, place english), and a row with empty place cells carries another Korean name of
+    the zone.
+    """
+    zones = {}      # zone english (casefold) -> [english as first written, [korean names]]
+    places = {}     # (zone english, place english), casefold -> (place korean, place english)
+    for p in products:
+        for zone_ko, zone_en, place_ko, place_en in p.places:
+            zone = zones.setdefault(zone_en.casefold(), [zone_en, []])
+            if zone_ko not in zone[1]:
+                zone[1].append(zone_ko)
+            places.setdefault((zone_en.casefold(), place_en.casefold()), (place_ko, place_en))
+    rows, others = [], 0
+    for key in sorted(zones, key=lambda k: (k, zones[k][0])):
+        zone_en, korean = zones[key]
+        for other in korean[1:]:
+            rows.append((other, zone_en, "", ""))
+            others += 1
+        mine = sorted((v for (z, _), v in places.items() if z == key),
+                      key=lambda v: (v[1].casefold(), v[1], v[0]))
+        rows.extend((korean[0], zone_en, ko, en) for ko, en in mine)
+    return rows, len(zones), len(places), others
+
+
 # --------------------------------------------------------------------------
 # Chat commands (GlobalStrings SLASH_<TYPE><n>)
 
@@ -625,15 +721,36 @@ def build(fetcher, builds, date, out_dir, log):
             "Rows: %d" % len(command_rows),
         ], ["chat_type", "canonical", "aliases"], command_rows)
 
+        place_rows, zone_count, place_count, other_names = merge_places(products)
+        ppath = os.path.join(out_dir, "zone_places.%s.tsv" % flavor)
+        write_tsv(ppath, [
+            "Places of each zone of the %s game: every named sub-area with the zone it lies in," % flavor,
+            "Korean <-> English.",
+            "Generated by tools/build_dictionary.py from Blizzard game data tables (AreaTable: koKR and",
+            "enUS client tables joined by row ID). A zone is every area above the place in the",
+            "ParentAreaID chain: a place under a sub-area is listed for that sub-area and for the zone.",
+            "Of several areas of one name (copies of a zone on dungeon, raid and scenario maps) only",
+            "one is taken for the zone: on an open-world map if there is one, with the lowest ID.",
+            "Do not edit by hand; rerun the tool.",
+            "A row without a place gives another Korean name of the zone: a later client renamed it,",
+            "and a channel label shows the name of the client that is running.",
+            "Products and builds: " + source,
+            "Where a later client renamed something in Korean, the first listed client's name is kept.",
+            "Date: " + date,
+            "Rows: %d (zones %d, places %d, other zone names %d)"
+            % (len(place_rows), zone_count, place_count, other_names),
+        ], ["zone_korean", "zone_english", "korean", "english"], place_rows)
+
         summary[flavor] = {
             "source": source, "rows": len(rows), "counts": counts, "commands": len(command_rows),
+            "zones": zone_count, "places": place_count, "other_zone_names": other_names,
             "per_product": {p.product: len(p.rows) for p in products},
             "dropped_junk": sum(p.dropped for p in products),
             "dropped_labels": sum(p.dropped_labels for p in products),
             "placeholders": [(p.product,) + x for p in products for x in p.dropped_placeholders],
             "renamed": renamed,
             "junk_rows": [r + (p.product,) for p in products for r in p.dropped_rows],
-            "files": {os.path.relpath(x, ROOT): os.path.getsize(x) for x in (path, cpath)},
+            "files": {os.path.relpath(x, ROOT): os.path.getsize(x) for x in (path, cpath, ppath)},
         }
     return summary
 
@@ -646,6 +763,8 @@ def report(fetcher, summary, out=sys.stdout):
             if kind in s["counts"]:
                 out.write("    %-12s %6d\n" % (kind, s["counts"][kind]))
         out.write("  chat commands: %d rows\n" % s["commands"])
+        out.write("  zone places: %d places in %d zones, %d other zone names\n"
+                  % (s["places"], s["zones"], s["other_zone_names"]))
         out.write("  rows dropped as test/unused/markup/untranslated-looking: %d\n" % s["dropped_junk"])
         out.write("  rows dropped as list labels: %d\n" % s["dropped_labels"])
         out.write("  placeholder Korean names dropped: %d\n" % len(s["placeholders"]))

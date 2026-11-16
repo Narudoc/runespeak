@@ -3,7 +3,8 @@ import RunespeakCore
 
 /// Batches chat lines waiting for translation: a short debounce gathers bursts into one request,
 /// at most two requests run at once, and no line is ever sent twice unless a request failed in a
-/// way worth retrying.
+/// way worth retrying. An answer that says a line over again is final too: the line stays in the
+/// original and is not asked about a second time (see `finish`).
 @MainActor
 final class TranslationQueue {
     struct Outcome {
@@ -11,6 +12,9 @@ final class TranslationQueue {
         var state: TranslationState
         var note: String?
         var engine: String?
+        /// The translator answered with the line itself (see `TranslationEcho`). That is no
+        /// translation: `state` is `.original`, and `engine` only says who was asked.
+        var unchanged = false
     }
 
     /// Waits, in seconds. Only the self-test shortens them.
@@ -114,6 +118,22 @@ final class TranslationQueue {
         wake(after: timing.debounce)
     }
 
+    /// The lines `ids` are gone from the list (another line took their place: the same row of
+    /// chat read again, whole): those still waiting are not sent, and an answer on its way for
+    /// one of them is not delivered.
+    func cancel(_ ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        let gone = Set(ids)
+        let dropped = pending.filter { gone.contains($0.id) }
+        guard !dropped.isEmpty else { return }
+        pending.removeAll { gone.contains($0.id) }
+        dropped.forEach(forget)
+        if pending.isEmpty { pendingSince = nil }
+    }
+
+    /// Lines waiting to be sent (for the self-test).
+    var pendingCount: Int { pending.count }
+
     /// Forgets everything waiting; answers of requests already sent are ignored.
     func cancelAll() {
         epoch += 1
@@ -159,13 +179,16 @@ final class TranslationQueue {
     }
 
     private func pump() {
+        // Lines put back when their batch went out as more than one request (below): they
+        // have had their turn, and no request that is out could have taken them along.
+        var leftBehind = false
         while inFlight < Self.maxInFlight, !pending.isEmpty {
             let wait = pausedUntil.timeIntervalSinceNow
             if wait > 0 {
                 wake(after: wait)
                 return
             }
-            if inFlight > 0, pending.count < Self.maxBatch, sizeLimit[pending[0].id] == nil, let since = pendingSince {
+            if !leftBehind, inFlight > 0, pending.count < Self.maxBatch, sizeLimit[pending[0].id] == nil, let since = pendingSince {
                 let hold = timing.holdWhileBusy - Date().timeIntervalSince(since)
                 if hold > 0 {
                     wake(after: hold)
@@ -176,8 +199,25 @@ final class TranslationQueue {
             let cap = min(Self.maxBatch, limit ?? Self.maxBatch)
             var count = 0
             while count < pending.count, count < cap, sizeLimit[pending[count].id] == limit { count += 1 }
-            let batch = Array(pending.prefix(count))
+            var batch = Array(pending.prefix(count))
             pending.removeFirst(count)
+            // A translator may send some of these lines apart from the others (lines that
+            // carry places of their zone, `Translating.incomingRequests`). Each of its
+            // requests is then a request of this queue too, so that a failure of one is dealt
+            // with as what it is (a rate limit pauses, a refusal is halved, a time-out is not
+            // asked again) and the answer of the other is shown when it arrives. The request
+            // of the oldest line goes now; the other lines go back to the front, in order.
+            leftBehind = false
+            let requests = translator().incomingRequests(for: batch)
+            if requests.count > 1, let first = requests.first(where: { $0.contains { $0.id == batch[0].id } }) {
+                let own = Set(first.map(\.id))
+                let others = batch.filter { !own.contains($0.id) }
+                if !others.isEmpty {
+                    batch.removeAll { !own.contains($0.id) }
+                    pending.insert(contentsOf: others, at: 0)
+                    leftBehind = true
+                }
+            }
             pendingSince = pending.isEmpty ? nil : Date()
             send(batch, alone: limit != nil)
         }
@@ -205,12 +245,13 @@ final class TranslationQueue {
             } catch {
                 result = .failure(error)
             }
-            self?.finish(batch, contextIDs: contextIDs, result: result, engine: engine, epoch: epoch, setup: setup)
+            self?.finish(batch, contextIDs: contextIDs, result: result, engine: engine, reader: context.reader,
+                         epoch: epoch, setup: setup)
         }
     }
 
     private func finish(_ batch: [ChatMessage], contextIDs: [UUID], result: Result<[UUID: TranslationOutput], Error>,
-                        engine: String, epoch: Int, setup: Int) {
+                        engine: String, reader: ReaderLanguage, epoch: Int, setup: Int) {
         inFlight -= 1
         guard epoch == self.epoch else {
             pump()
@@ -246,13 +287,23 @@ final class TranslationQueue {
         case .success(let translated):
             backoff = 0
             for message in batch {
-                if let output = translated[message.id],
-                   !output.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                guard let output = translated[message.id],
+                      !output.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    again(message, limit: 2, else: "번역 결과를 받지 못했습니다")
+                    continue
+                }
+                guard TranslationEcho.isEcho(output.text, of: message, reader: reader) else {
                     forget(message)
                     outcomes.append(Outcome(id: message.id, state: .translated(output.text), note: output.note, engine: engine))
-                } else {
-                    again(message, limit: 2, else: "번역 결과를 받지 못했습니다")
+                    continue
                 }
+                // The line came back as it went out: no translation. It is not asked for again.
+                // Measured against the live models (`--translate-check`): a line with nothing to
+                // translate ("kekw") comes back unchanged every time it is asked, so a second
+                // request would only be paid for, while readable chat came back unchanged in
+                // none of about 340 lines.
+                forget(message)
+                outcomes.append(Outcome(id: message.id, state: .original, engine: engine, unchanged: true))
             }
         case .failure(let error as TranslationError) where setup != self.setup:
             // The lines go to the translator now in use instead of failing with the old one's error.

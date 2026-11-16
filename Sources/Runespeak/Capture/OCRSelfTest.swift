@@ -171,6 +171,14 @@ enum OCRSelfTest {
         if !fingerprintBehaves() { failures.append("fingerprint가 같은/다른 화면을 구분하지 못합니다") }
         failures += worldTextFailures(recognizer, dumpDir: dumpDir)
         failures += wrappedLinkFailures(recognizer, dumpDir: dumpDir)
+        failures += wrappedLinkRunFailures(recognizer, dumpDir: dumpDir)
+        failures += koreanGuildFailures(recognizer, dumpDir: dumpDir)
+        failures += ownLineFailures(recognizer, dumpDir: dumpDir)
+        // A second-model pass that throws is skipped silently in the app; here it would make a
+        // broken run look like a clean one.
+        if VisionTextRecognizer.failedPasses > 0 {
+            failures.append("글자 인식 요청 \(VisionTextRecognizer.failedPasses)번이 실패해 건너뛰었습니다 (이 결과는 믿을 수 없습니다)")
+        }
 
         if failures.isEmpty {
             print("결과: 통과")
@@ -393,6 +401,244 @@ enum OCRSelfTest {
             }
         }
         print("[줄바꿈된 아이템 링크] 품질 색 링크가 다음 줄로 넘어가는 화면: \(failures.isEmpty ? "통과" : "실패")\n")
+        return failures
+    }
+
+    /// Quest links (orange, the colour of an emote) and links in the yellow of a notice that
+    /// wrap: a wrapped row that is all link, beginning in the middle of one, is the rest of the
+    /// message above and no line of its own, whatever the colour says.
+    private static func wrappedLinkRunFailures(_ recognizer: VisionTextRecognizer, dumpDir: URL?) -> [String] {
+        typealias Line = SyntheticChat.Line
+        typealias Segment = SyntheticChat.Segment
+        let pink = SyntheticChat.Palette.channel
+        let orange = RGBColor(r: 1, g: 0.5, b: 0.25), yellow = RGBColor(r: 1, g: 1, b: 0)
+        func header(_ name: String, _ text: String, link: String, _ colour: RGBColor) -> Line {
+            Line("en", "channel", pink, segments: [
+                Segment(text: "[1. 공개 - 저습지] [\(name)]: " + text, color: pink), Segment(text: link, color: colour),
+            ])
+        }
+        func wrapped(_ segments: [Segment]) -> Line {
+            var line = Line("en", "channel", pink, segments: segments)
+            line.wrapped = true
+            return line
+        }
+        let lines: [Line] = [
+            Line("en", "channel", pink, "[1. 공개 - 저습지] [Odalys]: anyone around for some quests"),
+            header("Exa Stormcaller", "LFG", link: "[The Old Iron", orange),
+            wrapped([Segment(text: "Vow][Bring Back a Ring][The Marrow Span]", color: orange)]),
+            header("Fenna Pim", "who has done ", link: "[The Lost Tablets", yellow),
+            wrapped([Segment(text: "of Will]", color: yellow), Segment(text: " yet? need help", color: pink)]),
+            header("Hexbloom", "can share ", link: "[Fall of Dun", orange),
+            wrapped([Segment(text: "Modr][The Greenwarden]", color: orange)]),
+            Line("en", "channel", pink, "[1. 공개 - 저습지] [Odalys]: what about tomorrow"),
+        ]
+        let wanted: [(String, String)] = [
+            ("Odalys", "anyone around for some quests"),
+            ("Exa Stormcaller", "LFG[The Old Iron Vow][Bring Back a Ring][The Marrow Span]"),
+            ("Fenna Pim", "who has done [The Lost Tablets of Will] yet? need help"),
+            ("Hexbloom", "can share [Fall of Dun Modr][The Greenwarden]"),
+            ("Odalys", "what about tomorrow"),
+        ]
+        var failures: [String] = []
+        for background in [SyntheticChat.Background.black, .darkPanel] {
+            let style = SyntheticChat.Style(fontName: SyntheticChat.fontName(for: .koKR), pointSize: 16, scale: 2,
+                                            background: background, edge: .shadow)
+            guard let rendered = SyntheticChat.render(lines: lines, style: style, canvasPoints: CGSize(width: 470, height: 185)),
+                  let frame = try? recognizer.recognizeSync(rendered.image, clientLocale: .koKR) else {
+                failures.append("줄바꿈된 퀘스트 링크: 이미지를 만들거나 읽지 못했습니다")
+                continue
+            }
+            if let dumpDir { writePNG(rendered.image, to: dumpDir.appendingPathComponent("koKR_wrapped_link_run_\(background.rawValue).png")) }
+            let tracker = ChatTracker(clientLocale: .koKR)
+            var messages: [ChatMessage] = []
+            let start = Date()
+            for n in 0..<4 { messages += tracker.ingest(frame, now: start.addingTimeInterval(Double(n) * 0.7)) }
+            let got = messages.map { "〈\($0.sender ?? "-")〉\($0.body)" }.joined(separator: " / ")
+            // Compared without spacing: this checks that no link went missing or was split off
+            // and that the brackets are brackets, not how every glyph was read.
+            func fold(_ s: String) -> String { s.lowercased().filter { $0.isLetter || $0 == "[" || $0 == "]" } }
+            if messages.count != wanted.count {
+                failures.append("줄바꿈된 퀘스트 링크(\(background.rawValue)): 메시지 \(wanted.count)개가 나와야 하는데 \(messages.count)개 — \(got)")
+            } else if zip(messages, wanted).contains(where: { $0.sender != $1.0 || fold($0.body) != fold($1.1) || $0.channel != .publicChannel }) {
+                failures.append("줄바꿈된 퀘스트 링크(\(background.rawValue)): 메시지가 온전하지 않음 — \(got)")
+            }
+            if messages.contains(where: { LanguageGate.isOnlyLinks($0.body) && TranslationPolicy.shouldTranslate($0, settings: everyTab) }) {
+                failures.append("줄바꿈된 퀘스트 링크(\(background.rawValue)): 링크뿐인 줄이 번역 대상이 됨 — \(got)")
+            }
+        }
+        print("[줄바꿈된 퀘스트 링크] 주황·노랑 링크가 다음 줄로 넘어가는 화면 (불투명·반투명 배경): \(failures.isEmpty ? "통과" : "실패")\n")
+        return failures
+    }
+
+    private static var everyTab: AppSettings {
+        var settings = AppSettings()
+        settings.enabledGroups = Set(ChannelGroup.allCases)
+        return settings
+    }
+
+    /// The commonest chat of a Korean guild on a foreign realm: the Korean guild tag, a Latin
+    /// name in its class colour, a short Korean message. No model but the Korean one can read
+    /// such a message, and the Latin/Cyrillic model answers with digits, bars and Cyrillic for
+    /// it: none of that may come out, on an opaque background or a translucent one.
+    private static func koreanGuildFailures(_ recognizer: VisionTextRecognizer, dumpDir: URL?) -> [String] {
+        typealias Line = SyntheticChat.Line
+        typealias Segment = SyntheticChat.Segment
+        let green = SyntheticChat.Palette.guild, pink = SyntheticChat.Palette.channel
+        // Class colours: paladin, druid, rogue, mage, hunter, shaman.
+        let classes = [RGBColor(r: 0.96, g: 0.55, b: 0.73), RGBColor(r: 1, g: 0.49, b: 0.04), RGBColor(r: 1, g: 0.96, b: 0.41),
+                       RGBColor(r: 0.41, g: 0.8, b: 0.94), RGBColor(r: 0.67, g: 0.83, b: 0.45), RGBColor(r: 0, g: 0.44, b: 0.87)]
+        let names = ["Brann Oakheart", "Mira Fenwick", "Odo Marsh", "Lu Mi", "Wren Thorn", "Dorn Flint"]
+        func said(_ who: Int, _ tag: String, _ colour: RGBColor, _ body: [Segment]) -> Line {
+            Line(tag == "길드" ? "ko" : "en", tag == "길드" ? "guild" : "channel", colour, segments: [
+                Segment(text: "[\(tag)] [", color: colour), Segment(text: names[who], color: classes[who]), Segment(text: "]: ", color: colour),
+            ] + body)
+        }
+        func guild(_ who: Int, _ body: String) -> Line { said(who, "길드", green, [Segment(text: body, color: green)]) }
+        let lines: [Line] = [
+            guild(0, "와 재밌겠다"), guild(1, "그거 법사님"), guild(1, "왜 안오시는..."), guild(2, "비싼템인데 ㄷㄷ"),
+            guild(2, "그럴거면 저도 불러요!!"), guild(3, "우편함 확인해도 안들어왔네 ㅠㅠ"),
+            said(3, "길드", green, [Segment(text: "[조잡한 연마석]", color: .white), Segment(text: " 이거 필요하신분?", color: green)]),
+            guild(4, "20렙 3개 구함"), guild(4, "법사는"), guild(4, "넵"),
+            // Mixed: Korean with an English word, English with a Korean word.
+            guild(5, "오늘 MC 가실분"), guild(0, "버프 plz ㅠㅠ"),
+            said(5, "1. 공개 - 저습지", pink, [Segment(text: "lol that 탱커 is so good", color: pink)]),
+            said(2, "1. 공개 - 저습지", pink, [Segment(text: "THEY TOOK OUR FISH", color: pink)]),
+        ]
+        var failures: [String] = []
+        var styles: [SyntheticChat.Style] = []
+        for background in [SyntheticChat.Background.black, .darkPanel, .busy] {
+            // (Small text on a 1x display over a busy scene is measured with the hard conditions.)
+            for (size, scale) in [(CGFloat(16), CGFloat(2)), (14, 2), (14, 1)] where !(background == .busy && scale == 1) {
+                styles.append(.init(fontName: SyntheticChat.fontName(for: .koKR), pointSize: size, scale: scale, background: background, edge: .shadow))
+            }
+        }
+        var rows = 0, exact = 0
+        for style in styles {
+            guard let rendered = SyntheticChat.render(lines: lines, style: style),
+                  let frame = try? recognizer.recognizeSync(rendered.image, clientLocale: .koKR) else {
+                failures.append("한글 길드 대화: 이미지를 만들거나 읽지 못했습니다 (\(style.label))")
+                continue
+            }
+            if let dumpDir {
+                let name = "koKR_guild_\(style.label).png".replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "_")
+                writePNG(rendered.image, to: dumpDir.appendingPathComponent(name))
+            }
+            // No pass may hand out letters of a script that cannot stand in these rows.
+            let foreign = frame.lines.filter { line in
+                line.text.unicodeScalars.contains { (0x370...0x52F).contains($0.value) || (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) }
+            }
+            if !foreign.isEmpty {
+                failures.append("한글 길드 대화(\(style.label)): 있을 수 없는 문자가 나옴 — " + foreign.map(\.text).joined(separator: " / "))
+            }
+            let tracker = ChatTracker(clientLocale: .koKR)
+            var messages: [ChatMessage] = []
+            let start = Date()
+            for n in 0..<8 { messages += tracker.ingest(frame, now: start.addingTimeInterval(Double(n) * 0.7)) }
+            let got = messages.map { "〈\($0.sender ?? "-")〉\($0.body)" }.joined(separator: " / ")
+            guard messages.count == lines.count else {
+                failures.append("한글 길드 대화(\(style.label)): 메시지 \(lines.count)개가 나와야 하는데 \(messages.count)개 — \(got)")
+                continue
+            }
+            for (message, line) in zip(messages, lines) {
+                let truth = line.text
+                let body = String(truth[truth.range(of: "]: ")!.upperBound...])
+                let name = names.first { truth.contains("[\($0)]") }
+                rows += 1
+                // The Korean of the message letter for letter (spacing aside), under the whole name.
+                func fold(_ s: String) -> String { s.filter { !$0.isWhitespace } }
+                if message.sender == name, fold(message.body) == fold(body) {
+                    exact += 1
+                } else if hangul(message.body) != hangul(body) || message.sender == nil {
+                    failures.append("한글 길드 대화(\(style.label)): \(truth) → 〈\(message.sender ?? "-")〉\(message.body)")
+                } else if CommandLine.arguments.contains("--verbose") {
+                    print("    \(style.label): \(truth) → 〈\(message.sender ?? "-")〉\(message.body)")
+                }
+                if line.channel == "guild", TranslationPolicy.shouldTranslate(message, settings: everyTab) {
+                    failures.append("한글 길드 대화(\(style.label)): 한국어 글이 번역 대상이 됨 — \(message.body)")
+                }
+            }
+        }
+        // Every Hangul syllable must be right in every row (checked above); glyph slips in the
+        // Latin names and punctuation of a rendering are allowed for in a few rows.
+        if rows > 0, Double(exact) / Double(rows) < 0.9 {
+            failures.append(String(format: "한글 길드 대화: 글자 하나까지 맞은 줄 %d/%d (%.0f%%) < 기준 90%%", exact, rows, Double(exact) / Double(rows) * 100))
+        }
+        print("[한글 길드 대화] 직업 색 영문 이름 + 짧은 한글 본문, 불투명·반투명 배경 \(styles.count)종: "
+              + "\(failures.isEmpty ? "통과" : "실패") (완전 일치 \(exact)/\(rows)줄)\n")
+        return failures
+    }
+
+    private static func hangul(_ s: String) -> String {
+        String(s.unicodeScalars.filter { (0xAC00...0xD7A3).contains($0.value) || (0x3131...0x318E).contains($0.value) }.map(Character.init))
+    }
+
+    /// Lines of their own on the message column right below chat: the speech of a creature whose
+    /// name has a quoted nickname (with a wrapped row), and crafting notices that begin with an
+    /// item link in the link's colour. None of it belongs to the guild line above it, and the
+    /// notice keeps all of its text.
+    private static func ownLineFailures(_ recognizer: VisionTextRecognizer, dumpDir: URL?) -> [String] {
+        typealias Line = SyntheticChat.Line
+        typealias Segment = SyntheticChat.Segment
+        let green = SyntheticChat.Palette.guild
+        let creature = RGBColor(r: 1, g: 1, b: 0.62), loot = RGBColor(r: 0, g: 0.67, b: 0)
+        func guild(_ name: String, _ body: String) -> Line { Line("ko", "guild", green, "[길드] [\(name)]: \(body)") }
+        func crafted(_ item: String, _ particle: String, _ quality: RGBColor = .white) -> Line {
+            Line("ko", "system", loot, segments: [Segment(text: "[\(item)]", color: quality), Segment(text: "\(particle) 만들었습니다.", color: loot)])
+        }
+        var second = Line("ko", "say", creature, "챙겨서 주막에서 다시 만나도록 하세나.")
+        second.wrapped = true
+        let lines: [Line] = [
+            guild("Mira Dawnsong", "조심해서 가야겠다"),
+            Line("ko", "say", creature, "\"말라깽이\" 토르벤 하크의 말: 내 창고에 그 일에 쓸 연장이 좀 있으니 그걸"),
+            second,
+            crafted("조잡한 연마석", "을"),
+            guild("Lu Mi", "법사는"),
+            crafted("일반 숫돌", "을"),
+            guild("Lu Mi", "먼저 달려들어갔다가"),
+            crafted("구리 주괴", "를", RGBColor(r: 0.12, g: 1, b: 0)),
+            guild("Hazel Monk", "사냥꾼을 그래서 요즘에"),
+            guild("Lu Mi", "안되겠다 싶으면 얼리고 점멸"),
+        ]
+        let wanted: [(ChatChannel, String?, String)] = [
+            (.guild, "Mira Dawnsong", "조심해서 가야겠다"),
+            (.say, "\"말라깽이\" 토르벤 하크", "내 창고에 그 일에 쓸 연장이 좀 있으니 그걸 챙겨서 주막에서 다시 만나도록 하세나."),
+            (.system, nil, "[조잡한 연마석]을 만들었습니다."), (.guild, "Lu Mi", "법사는"),
+            (.system, nil, "[일반 숫돌]을 만들었습니다."), (.guild, "Lu Mi", "먼저 달려들어갔다가"),
+            (.system, nil, "[구리 주괴]를 만들었습니다."), (.guild, "Hazel Monk", "사냥꾼을 그래서 요즘에"),
+            (.guild, "Lu Mi", "안되겠다 싶으면 얼리고 점멸"),
+        ]
+        var failures: [String] = []
+        for background in [SyntheticChat.Background.black, .darkPanel] {
+            let style = SyntheticChat.Style(fontName: SyntheticChat.fontName(for: .koKR), pointSize: 16, scale: 2,
+                                            background: background, edge: .shadow)
+            guard let rendered = SyntheticChat.render(lines: lines, style: style, canvasPoints: CGSize(width: 560, height: 225)),
+                  let frame = try? recognizer.recognizeSync(rendered.image, clientLocale: .koKR) else {
+                failures.append("제자리 줄: 이미지를 만들거나 읽지 못했습니다")
+                continue
+            }
+            if let dumpDir { writePNG(rendered.image, to: dumpDir.appendingPathComponent("koKR_own_lines_\(background.rawValue).png")) }
+            let tracker = ChatTracker(clientLocale: .koKR)
+            var messages: [ChatMessage] = []
+            let start = Date()
+            for n in 0..<6 { messages += tracker.ingest(frame, now: start.addingTimeInterval(Double(n) * 0.7)) }
+            let got = messages.map { "〈\($0.channel.rawValue) \($0.sender ?? "-")〉\($0.body)" }.joined(separator: " / ")
+            // Letters, digits and brackets: which rows are one line and that none lost its
+            // text, not how every glyph of this rendering was read.
+            func fold(_ s: String) -> String {
+                String(s.unicodeScalars.filter { (0xAC00...0xD7A3).contains($0.value) || ($0.isASCII && CharacterSet.alphanumerics.contains($0)) || $0 == "[" || $0 == "]" }
+                    .map(Character.init))
+            }
+            if messages.count != wanted.count {
+                failures.append("제자리 줄(\(background.rawValue)): 메시지 \(wanted.count)개가 나와야 하는데 \(messages.count)개 — \(got)")
+            } else if zip(messages, wanted).contains(where: { message, want in
+                // (A glyph of a name read wrong in this rendering is no line gone astray.)
+                let name = levenshtein(Array(fold(message.sender ?? "")), Array(fold(want.1 ?? "")))
+                return message.channel != want.0 || name > 1 || (message.sender == nil) != (want.1 == nil) || fold(message.body) != fold(want.2)
+            }) {
+                failures.append("제자리 줄(\(background.rawValue)): 줄이 온전하지 않음 — \(got)")
+            }
+        }
+        print("[제자리 줄] 따옴표 별명이 붙은 NPC의 말과 아이템 링크로 시작하는 제작 안내 (불투명·반투명 배경): \(failures.isEmpty ? "통과" : "실패")\n")
         return failures
     }
 

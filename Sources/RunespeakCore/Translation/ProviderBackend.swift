@@ -112,7 +112,10 @@ protocol ProviderBackend: Sendable {
 
     /// The generation request: endpoint, auth headers, body. The stable part (model, system
     /// prompt) must come first and be byte-identical between requests so prompt caches can hit.
-    func request(apiKey: String, modelID: String, system: String, user: String, careful: Bool, features: Set<RequestFeature>) -> URLRequest
+    /// `addendum` is system prompt that only some requests carry: it goes behind `system`,
+    /// outside the cached part, so that `system` stays the cache entry of every request.
+    func request(apiKey: String, modelID: String, system: String, addendum: String?, user: String, careful: Bool,
+                 features: Set<RequestFeature>) -> URLRequest
 
     /// Reads a 200 body. Throws `TranslationError.badResponse` when it is not this API's JSON.
     func parseResponse(_ data: Data) throws -> BackendResponse
@@ -187,5 +190,12 @@ public enum TranslatorFactory {
     public static func make(provider: AIProvider, apiKey: String, glossary: GlossaryProviding,
                             usage: UsageTracking?, session: URLSession = .shared) -> Translating {
         LLMTranslator(provider: provider, apiKey: apiKey, glossary: glossary, usage: usage, session: session)
+    }
+}
+
+extension ProviderBackend {
+    /// A request that carries the frozen system prompt and nothing behind it.
+    func request(apiKey: String, modelID: String, system: String, user: String, careful: Bool, features: Set<RequestFeature>) -> URLRequest {
+        request(apiKey: apiKey, modelID: modelID, system: system, addendum: nil, user: user, careful: careful, features: features)
     }
 }

@@ -138,7 +138,7 @@ private struct MainWindowStatusLine: View {
                 .accessibilityHidden(true)
             Text(status.koreanText)
                 .font(.headline)
-                .lineLimit(3)
+                .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             Spacer(minLength: 8)
@@ -147,7 +147,7 @@ private struct MainWindowStatusLine: View {
                 Button("시스템 설정 열기") {
                     if let url = Self.screenRecordingSettingsURL { NSWorkspace.shared.open(url) }
                 }
-                .help("열리는 설정 화면의 앱 목록에서 이 번역기의 스위치를 올려 주세요. 허용은 앱을 새로 띄워야 적용됩니다")
+                .help("열리는 설정 화면의 앱 목록에서 Runespeak의 스위치를 올려 주세요. 이미 켜져 있다면 껐다가 다시 켜거나, 목록에서 [−]로 지운 뒤 새로 허용합니다. 허용은 앱을 새로 띄워야 적용됩니다")
                 Button("다시 실행") { actions?.relaunch() }
                     .help("스위치를 올린 다음 누르면 번역기가 스스로 종료했다가 다시 뜹니다")
             case .needsRegion:
@@ -313,7 +313,7 @@ private struct MainWindowHistoryRow: View, Equatable {
         case .translated(let text):
             return prefix + Text(text).foregroundColor(.primary)
         case .original:
-            return prefix + Text(entry.message.body).foregroundColor(chatColor)
+            return prefix + Text(ChatDisplay.body(for: entry.message)).foregroundColor(chatColor)
         case .pending, .failed:
             return prefix + Text(entry.message.body).foregroundColor(.secondary)
         }
